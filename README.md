@@ -33,12 +33,6 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 | `scripts/generate_parameter.py` | bulk-generate `parameter.yml` จาก metadata ที่ Fabric ฝังไว้ใน notebook | หลังเพิ่ม Notebook ที่ attach lakehouse ใหม่ |
 | `scripts/debug_parameterization.py` | validate `parameter.yml` แบบ offline ไม่ต้องมี Azure credential | ก่อน push เช็ค syntax เร็ว ๆ |
 
-### ยังไม่ได้ใช้จริง (draft)
-
-| ไฟล์ | สถานะ |
-|---|---|
-| `deploy-test-job.yml` | รอสร้าง staging workspace ก่อนถึงจะเอาไปรวมเข้า `fabric-ci.yml` ได้ |
-
 ---
 
 ## ข้อจำกัด/กฎที่ต้องรู้ก่อนเริ่มงาน
