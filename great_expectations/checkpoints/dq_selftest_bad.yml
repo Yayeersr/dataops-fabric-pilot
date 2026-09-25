@@ -1,0 +1,64 @@
+# Worked example (FAIL case) — expectations list เดียวกับ dq_selftest_good.yml เป๊ะ แต่ชี้ไป
+# great_expectations/fixtures/dq_selftest_bad_data.csv ที่ตั้งใจทำผิดทีละแถวทีละจุด:
+#   row 1 (customer_id ว่าง)           -> completeness fail
+#   row 2+3 (customer_id ซ้ำ "C020")   -> uniqueness fail
+#   row 4 (score=150)                  -> validity(range) fail
+#   row 5 (phone_number ผิดรูปแบบ)     -> validity(regex) fail
+#   row 6 (lead_status="unknown")      -> consistency fail
+#   row 7 (total_amount < discount)    -> accuracy fail
+#   row 8 (updated_at ปี 2050)         -> timeliness fail
+# expect_table_columns_to_match_set ยังผ่านอยู่ (คอลัมน์ไม่ได้เปลี่ยน) — ไฟล์นี้ไม่ครอบคลุม
+# กรณี column หายไปจริง ต้องทำ fixture แยกถ้าจะทดสอบ branch นั้น
+
+data_file: great_expectations/fixtures/dq_selftest_bad_data.csv
+
+dtype:
+  phone_number: str
+
+expectations:
+  # Completeness
+  - expectation_type: expect_table_columns_to_match_set
+    kwargs:
+      column_set: [customer_id, score, lead_status, phone_number, total_amount, discount_amount, updated_at]
+      exact_match: false
+
+  - expectation_type: expect_column_values_to_not_be_null
+    kwargs:
+      column: customer_id
+
+  # Uniqueness
+  - expectation_type: expect_column_values_to_be_unique
+    kwargs:
+      column: customer_id
+
+  # Validity
+  - expectation_type: expect_column_values_to_be_between
+    kwargs:
+      column: score
+      min_value: 0
+      max_value: 100
+
+  - expectation_type: expect_column_values_to_match_regex
+    kwargs:
+      column: phone_number
+      regex: "^0[0-9]{9}$"
+
+  # Accuracy
+  - expectation_type: expect_column_pair_values_a_to_be_greater_than_b
+    kwargs:
+      column_A: total_amount
+      column_B: discount_amount
+      or_equal: true
+
+  # Consistency
+  - expectation_type: expect_column_values_to_be_in_set
+    kwargs:
+      column: lead_status
+      value_set: [new, qualified, converted, lost]
+
+  # Timeliness
+  - expectation_type: expect_column_max_to_be_between
+    kwargs:
+      column: updated_at
+      min_value: "2026-08-01"
+      max_value: "2026-09-30"

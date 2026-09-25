@@ -74,7 +74,9 @@ jobs:
                   echo "::error::[$name] check=data_quality but no checkpoint found (expected great_expectations/checkpoints/dq_${name}.yml)"
                   missing=1
                 else
-                  great_expectations checkpoint run "dq_${name}"
+                  # ไม่ใช้ CLI `great_expectations checkpoint run` แบบเดิม — GX 1.x ตัด CLI
+                  # นั้นออกแล้ว (ดู comment ใน scripts/run_data_quality_checkpoint.py)
+                  python scripts/run_data_quality_checkpoint.py "dq_${name}"
                 fi
                 ;;
 

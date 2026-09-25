@@ -1,0 +1,61 @@
+# Worked example (PASS case) — พิสูจน์ว่า dq_TEMPLATE.yml ทั้ง 6 มิติที่ทำได้จริง (ยกเว้น
+# Integrity ที่ script ไม่รองรับ cross-file) เช็คได้ถูกต้องจริง ไม่ใช่แค่สะกดชื่อ
+# expectation_type ถูก — คู่กับ dq_selftest_bad.yml (expectations list เดียวกัน แต่ข้อมูล
+# ตั้งใจทำผิดทีละจุดให้ FAIL) รันแล้วเทียบผลกันดูได้
+#
+# ข้อมูลใน great_expectations/fixtures/dq_selftest_good_data.csv ทุกแถวผ่านทุกกฎ
+
+data_file: great_expectations/fixtures/dq_selftest_good_data.csv
+
+# phone_number ขึ้นต้นด้วย 0 ล้วนๆ ตัวเลข — ถ้าไม่บังคับ str ไว้ pandas จะเดาเป็น int
+# แล้วเลข 0 ข้างหน้าหายไปเงียบๆ (ดู comment ข้อจำกัดใน run_data_quality_checkpoint.py)
+dtype:
+  phone_number: str
+
+expectations:
+  # Completeness
+  - expectation_type: expect_table_columns_to_match_set
+    kwargs:
+      column_set: [customer_id, score, lead_status, phone_number, total_amount, discount_amount, updated_at]
+      exact_match: false
+
+  - expectation_type: expect_column_values_to_not_be_null
+    kwargs:
+      column: customer_id
+
+  # Uniqueness
+  - expectation_type: expect_column_values_to_be_unique
+    kwargs:
+      column: customer_id
+
+  # Validity
+  - expectation_type: expect_column_values_to_be_between
+    kwargs:
+      column: score
+      min_value: 0
+      max_value: 100
+
+  - expectation_type: expect_column_values_to_match_regex
+    kwargs:
+      column: phone_number
+      regex: "^0[0-9]{9}$"
+
+  # Accuracy
+  - expectation_type: expect_column_pair_values_a_to_be_greater_than_b
+    kwargs:
+      column_A: total_amount
+      column_B: discount_amount
+      or_equal: true
+
+  # Consistency
+  - expectation_type: expect_column_values_to_be_in_set
+    kwargs:
+      column: lead_status
+      value_set: [new, qualified, converted, lost]
+
+  # Timeliness
+  - expectation_type: expect_column_max_to_be_between
+    kwargs:
+      column: updated_at
+      min_value: "2026-08-01"
+      max_value: "2026-09-30"

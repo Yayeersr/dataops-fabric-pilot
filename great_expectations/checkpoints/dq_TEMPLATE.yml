@@ -1,0 +1,112 @@
+# TEMPLATE — คัดลอกไฟล์นี้ไปตั้งชื่อใหม่เป็น dq_<ชื่อ item>.yml (ต้องตรงชื่อ item เป๊ะ
+# เหมือน pattern ของ tests/unit/test_<name>.py) แล้วลบ/แก้ expectation ให้เหลือแค่
+# ที่ตรงกับ business rule ของ item นั้นจริงๆ — ห้าม copy ไปใช้ทั้งหมดตรงๆ โดยไม่ตัด
+#
+# จัดกลุ่มตาม 7 มิติ data quality มาตรฐาน (Completeness / Uniqueness / Validity /
+# Accuracy / Consistency / Timeliness / Integrity) เพื่อไล่เช็คทีละมิติว่า column
+# ไหนของ item นี้ต้องเช็คมิติไหนบ้าง — ค่า threshold/regex/set จริงต้องมาจากคนที่รู้
+# business rule ของ item เอง ไม่มีใครเดาให้ได้
+#
+# รายชื่อ expectation_type ทั้งหมด: https://greatexpectations.io/expectations/
+# รันด้วย: python scripts/run_data_quality_checkpoint.py dq_<name>
+#
+# ดูตัวอย่างที่รันได้จริงครบทั้ง 6 มิติ (good + bad case) ที่
+# dq_selftest_good.yml / dq_selftest_bad.yml ในโฟลเดอร์เดียวกันนี้
+#
+# ⚠️ ข้อจำกัดของ script ปัจจุบัน (scripts/run_data_quality_checkpoint.py):
+#   - รองรับแค่ data_file เดียว โหลดเป็น pandas DataFrame จาก CSV เท่านั้น
+#   - ไม่รองรับ dynamic value ใน kwargs (เช่น "วันนี้ - 7 วัน") ต้องเป็นค่า static
+#   - ไม่รองรับเทียบข้าม 2 data source ในไฟล์เดียว (เช่น เทียบกับ master list อีกไฟล์)
+#   ผลคือมิติ Consistency (เทียบข้ามแหล่ง) และ Timeliness (เทียบกับ "วันนี้") ทำได้
+#   "บางส่วน" เท่านั้นด้วย config รูปแบบปัจจุบัน — ดู comment ในแต่ละหมวดด้านล่าง
+
+data_file: great_expectations/fixtures/<ชื่อไฟล์ตัวอย่างข้อมูล>.csv
+
+# optional — ใส่เฉพาะ column ที่ต้องบังคับ dtype ตอนอ่าน CSV (ปกติต้องมีกับ column
+# ตัวเลขล้วนที่ขึ้นต้นด้วย 0 เช่น เบอร์โทร ไม่งั้น pandas เดาเป็น int แล้ว 0 ข้างหน้าหาย
+# ดู comment เต็มในหมวด Validity ด้านล่าง)
+# dtype:
+#   phone_number: str
+
+expectations:
+
+  # ── 1. Completeness — ข้อมูลครบไหม (ไม่มีค่าขาดหาย) ──────────────────────
+  # ห้าม column สำคัญ (key/field จำเป็น) เป็นค่าว่าง
+  - expectation_type: expect_column_values_to_not_be_null
+    kwargs:
+      column: <ชื่อ column ที่ห้ามว่าง เช่น customer_id>
+
+  # ตารางต้องมี column ครบตามที่คาด (กัน schema drift ที่ column หายไปเงียบๆ)
+  - expectation_type: expect_table_columns_to_match_set
+    kwargs:
+      column_set: [<column1>, <column2>, <column3>]
+      exact_match: false
+
+  # ── 2. Uniqueness — มีข้อมูลซ้ำไหม ────────────────────────────────────
+  # ห้าม key หลักซ้ำกัน
+  - expectation_type: expect_column_values_to_be_unique
+    kwargs:
+      column: <ชื่อ column key เช่น customer_id>
+
+  # ถ้า key จริงเป็น composite (หลาย column รวมกันถึงจะ unique) ใช้ตัวนี้แทน
+  # - expectation_type: expect_compound_columns_to_be_unique
+  #   kwargs:
+  #     column_list: [<column_a>, <column_b>]
+
+  # ── 3. Validity — รูปแบบ/ขอบเขตค่าถูกต้องไหม ──────────────────────────
+  # ค่าต้องอยู่ในช่วงที่ business rule กำหนด (เช่น score 0-100)
+  - expectation_type: expect_column_values_to_be_between
+    kwargs:
+      column: <ชื่อ column ตัวเลข เช่น score>
+      min_value: 0
+      max_value: 100
+
+  # รูปแบบต้องตรง pattern ที่กำหนด (เช่น เบอร์โทร, email)
+  # ⚠️ ยืนยันจริงจาก dq_selftest_good.yml: column ที่เป็นตัวเลขล้วนขึ้นต้นด้วย 0 (เช่น
+  # เบอร์โทร) ต้องประกาศ `dtype: {<column>: str}` ที่ท้ายไฟล์นี้ด้วย ไม่งั้น pandas จะ
+  # เดาเป็น int แล้วเลข 0 ข้างหน้าหายไปเงียบๆ ทำให้ regex fail ทั้งที่ข้อมูลถูกต้อง
+  - expectation_type: expect_column_values_to_match_regex
+    kwargs:
+      column: <ชื่อ column เช่น phone_number>
+      regex: "^0[0-9]{9}$"
+
+  # ── 4. Accuracy — ค่าถูกต้องตรงความจริงไหม ───────────────────────────
+  # ⚠️ GX เช็ค "ค่าถูกต้องแบบสมบูรณ์" ให้ไม่ได้ตรงๆ (ไม่มี ground truth ให้เทียบ)
+  # ทำได้แค่ประมาณผ่านขอบเขตที่ business ยอมรับ (ซ้ำกับ Validity ด้านบน) หรือ
+  # เทียบสอดคล้องกันเองระหว่าง column ในตารางเดียวกัน เช่น total ต้อง >= subtotal
+  - expectation_type: expect_column_pair_values_a_to_be_greater_than_b
+    kwargs:
+      column_A: <column ที่ควรมากกว่า เช่น total_amount>
+      column_B: <column ที่ควรน้อยกว่า เช่น discount_amount>
+      or_equal: true
+
+  # ── 5. Consistency — ตรงกับแหล่งข้อมูลอื่นที่เชื่อถือได้ไหม ────────────
+  # เทียบกับชุดค่าที่ตกลงกันไว้ (master list / reference list)
+  - expectation_type: expect_column_values_to_be_in_set
+    kwargs:
+      column: <ชื่อ column เช่น lead_status>
+      value_set: [new, qualified, converted, lost]
+
+  # ⚠️ ถ้าต้องเทียบข้าม 2 ตาราง/แหล่งจริง (เช่น sum ยอดใน Gold ต้องเท่ากับ Silver)
+  # script ปัจจุบันรองรับแค่ data_file เดียว — ต้องขยาย run_data_quality_checkpoint.py
+  # ให้โหลด 2 ไฟล์ + เขียน custom validation logic เพิ่ม ยังทำไม่ได้ด้วย config รูปแบบนี้
+
+  # ── 6. Timeliness — ข้อมูลใหม่พอไหม ───────────────────────────────────
+  # เช็คว่าค่า max ของ column วันที่อยู่ในช่วงที่ยอมรับได้ (ต้องใส่ค่า static
+  # ไปก่อน เช่น "ไม่เก่ากว่าวันที่ deploy ล่าสุด" — ยังใส่ dynamic เช่น "วันนี้-7วัน"
+  # ไม่ได้ด้วย config รูปแบบปัจจุบัน ต้องแก้ script ให้ resolve ค่าแบบนี้ก่อนใช้จริง)
+  - expectation_type: expect_column_max_to_be_between
+    kwargs:
+      column: <ชื่อ column วันที่ เช่น updated_at>
+      min_value: "2026-09-01"
+      max_value: "2026-12-31"
+
+  # ── 7. Integrity — ความสัมพันธ์/การอ้างอิงยังถูกต้องอยู่ไหม ────────────
+  # โดยหลักคือ referential integrity (foreign key ต้องมีอยู่จริงใน table แม่)
+  # ⚠️ เหมือน Consistency ข้ามแหล่ง — ต้องเทียบกับอีก data_file จึงทำได้ ตอนนี้
+  # ประมาณได้แค่ระดับ "ค่าต้องอยู่ในชุดที่รู้จัก" แบบเดียวกับ Consistency ด้านบน
+  # ถ้าต้องการเช็คจริงข้าม Lakehouse/Warehouse ต้องขยาย script ให้ query อีกตารางมาก่อน
+  #
+  # ส่วน "maintained & updated over time" (นิยามของ Integrity ตามรูป OvalEdge)
+  # เป็นเรื่อง governance/process มากกว่าจุดเดียวที่เช็คอัตโนมัติได้ — ปกติดูจาก
+  # audit log / เวลาที่แก้ schema last ครั้ง ไม่ใช่ expectation ในไฟล์นี้

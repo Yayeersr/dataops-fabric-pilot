@@ -1,7 +1,14 @@
 fabric-cicd
 pytest
-great_expectations
+great_expectations>=1.0,<2.0
+pandas
 azure-identity
 PyYAML   # ใช้โดย scripts/deploy_endpoints.py อ่าน endpoint-targets.yml
 # หมายเหตุ: ไม่ต้อง pip install "yq" — GitHub Actions ubuntu-latest runner มี yq (mikefarah/yq) ติดตั้งมาให้อยู่แล้ว
 # pip package ชื่อ yq เป็นคนละตัวกัน (syntax ต่างกัน) ถ้าติดตั้งซ้อนอาจชนกับตัวที่ CI ใช้อยู่
+#
+# หมายเหตุ: great_expectations pin ไว้ที่ 1.x เพราะ scripts/run_data_quality_checkpoint.py
+# ใช้ GX 1.x Python API ตรงๆ (data_sources.add_pandas / ValidationDefinition / Checkpoint)
+# ยังไม่ได้ทดสอบว่าใช้ได้กับ 2.x — ปล่อยไม่ pin ไว้เสี่ยง pip ดึงเวอร์ชันใหม่มาแล้ว CI พังเงียบๆ
+# pandas ใส่ตรงๆ เพราะ run_data_quality_checkpoint.py import pandas โดยตรง (เดิมได้แค่ผ่าน GX
+# transitive dependency เท่านั้น ไม่ได้ pin เอง)

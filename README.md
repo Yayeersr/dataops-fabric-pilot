@@ -14,7 +14,10 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 | `ci-config.yml` | กฎว่า item ไหนต้องเช็คแบบไหน (`unit_test` / `data_quality` / `structure` / `schema` / `none`) |
 | `requirements.txt` | dependency ที่ CI ต้องติดตั้งก่อนรันเช็ค |
 | `tests/unit/test_<name>.py` | test คู่กับ Notebook แต่ละตัว (ชื่อต้องตรงชื่อ item เป๊ะ) |
-| `great_expectations/checkpoints/dq_<name>.yml` | checkpoint คู่กับ item ที่ check = `data_quality` |
+| `great_expectations/checkpoints/dq_TEMPLATE.yml` | checklist ครบ 7 มิติ data quality (completeness/uniqueness/validity/accuracy/consistency/timeliness/integrity) พร้อม expectation_type ตัวอย่างต่อมิติ — ไล่ดูก่อนตัดสินใจว่า item ของตัวเองต้องเช็คอะไรบ้าง |
+| `great_expectations/checkpoints/dq_<name>.yml` | checkpoint คู่กับ item ที่ check = `data_quality` — เลือก expectation ที่ต้องการจาก checklist ด้านบนแล้ว copy โครงจาก `dq_selftest_good.yml` (ตัวอย่างที่รันได้จริง ครบ 6 มิติ) มาปรับ |
+| `scripts/run_data_quality_checkpoint.py` | script กลางสำหรับ check = `data_quality` — อ่าน checkpoint yaml แล้วรันผ่าน GX 1.x Python API (ไม่ใช่ CLI แบบเดิม ดู comment ในไฟล์) |
+| `great_expectations/checkpoints/dq_selftest_good.yml` / `dq_selftest_bad.yml` | ตัวอย่าง PASS/FAIL คู่กันครบ 6 มิติ (ไม่รวม Integrity ที่ script ยังไม่รองรับ) — ใช้ดูว่าแต่ละ expectation_type เช็คจริงถูกต้องยังไง |
 | `scripts/validate_pipeline_structure.py`, `validate_schema_contract.py` | script กลางสำหรับ check = `structure` / `schema` |
 
 ### CD (deploy จริง) — ขาดไม่ได้
