@@ -1,0 +1,10 @@
+# Schema contract ของ lh_dqgate_test — ตรวจสอบผ่าน scripts/validate_schema_contract.py
+# ตาราง dqgate_sample ถูกสร้างโดย fabric_items/nb_dqgate_check.Notebook (seed cell) — ดู
+# DataOps-CICD-Workflow.md section 14 Phase 7 สำหรับที่มา
+tables:
+  dqgate_sample:
+    columns:
+      - name: id
+        type: int
+      - name: qty
+        type: int

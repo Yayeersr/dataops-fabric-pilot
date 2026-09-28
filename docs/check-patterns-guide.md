@@ -1,25 +1,48 @@
-# Live Data Quality (GX) — Template & Usage Guide
+# Check Patterns — Usage Guide & Templates
 
-คู่มือนี้สรุปวิธีทำ data quality check แบบ **live** (เช็คข้อมูลสดตรงบน Fabric ผ่าน Spark) ด้วย
+คู่มือนี้รวมวิธีใช้งาน + เทมเพลตของกลไกเช็คทุกแบบที่มีในรีโปนี้ (`ci-config.yml`'s 5 pattern —
+`unit_test`/`data_quality`/`structure`/`schema`/`none` — บวกกลไก live DQ ที่แยกนอกระบบ pattern)
+สรุปสถานะรวมก่อน:
+
+| Pattern | มีเทมเพลต/คู่มือไหม | ใช้งานได้จริงไหม |
+|---|---|---|
+| **Live DQ Gate** (แยกนอก 5 pattern) | ✅ [ส่วนที่ 1](#ส่วนที่-1--live-data-quality-check-gx) | ✅ พิสูจน์แล้วจริง |
+| `schema` | ✅ [ส่วนที่ 2](#ส่วนที่-2--schema-contract-check) | ✅ ใช้ได้จริง (มีตัวอย่าง `lh_dqgate_test`) |
+| `unit_test` | ✅ [ส่วนที่ 3](#ส่วนที่-3--unit_test-pattern) | ✅ ใช้ได้จริงอยู่แล้ว มีตัวอย่างหลายไฟล์ |
+| `structure` | ✅ [ส่วนที่ 4](#ส่วนที่-4--structure-pattern) | ✅ ใช้ได้จริงอยู่แล้ว (ไม่มี "เทมเพลตต่อ item" เพราะเป็น script กลางที่ทำงานอัตโนมัติ) |
+| `data_quality` (CSV แบบเดิม) | ✅ [ส่วนที่ 5](#ส่วนที่-5--data_quality-csv-pattern-เดิม) | ⚠️ ใช้ได้ แต่**ยังไม่ฟันธง** — รอเช็คก่อนว่ามี workspace/ทีมอื่นใช้ไฟล์แบบนี้อยู่ไหม |
+| `none` | ✅ [ส่วนที่ 6](#ส่วนที่-6--none-pattern) | ✅ (ไม่มีอะไรให้ทำ ตามชื่อ) |
+
+ดูภาพรวมของทั้งระบบ pattern-based CI ได้ใน `CLAUDE.md` ของ repo เอกสารแยก (`DataOps-CICD-Workflow.md`)
+
+---
+
+# ส่วนที่ 1 — Live Data Quality Check (GX)
+
+เช็ค data quality แบบ **live** (เช็คข้อมูลสดตรงบน Fabric ผ่าน Spark) ด้วย
 [Great Expectations](https://greatexpectations.io/) (GX) — เป็นผลจากการทำ POC จริงใน section 14
 Phase 7 ของ `DataOps-CICD-Workflow.md` (repo เอกสารแยก) พิสูจน์แล้วว่า GX check ที่ raise error
 ใน Notebook Activity ทำให้ pipeline job report เป็น `Failed` จริง ใช้เป็น automated DQ gate ได้
 
-## เมื่อไหร่ควรใช้ live check (คู่มือนี้) เทียบกับ CSV/snapshot
+## เมื่อไหร่ควรใช้ live check เทียบกับ CSV/snapshot
 
-| | Live check (คู่มือนี้) | CSV/snapshot (`data_quality` pattern เดิม) |
+| | Live check (ส่วนนี้) | CSV/snapshot (`data_quality` pattern เดิม) |
 |---|---|---|
 | ข้อมูลที่เช็ค | ข้อมูลจริงบน Lakehouse/Warehouse ผ่าน Spark ตรงๆ | ไฟล์ CSV ที่ commit ไว้ใน repo |
 | เหมาะกับ | ตาราง production จริง ไม่ว่าขนาดเท่าไหร่ | ตารางเล็กมากๆ (lookup/config) หรือทดสอบ mechanism เฉยๆ |
 | ข้อมูลออกจาก Fabric ไหม | ไม่เลย | ต้องดึงออกมาเป็นไฟล์ก่อน |
-| **ใช้กับข้อมูลจริง/production** | ✅ ใช้ทางนี้เป็นหลัก | ❌ ไม่แนะนำ (ทีมตัดสินใจแล้วว่าจะไม่ใช้วิธี snapshot กับข้อมูลจริง) |
+| **ใช้ได้ในรีโปนี้ไหม** | ✅ ใช้ทางนี้เป็นค่า default สำหรับข้อมูลจริง | ⚠️ ใช้ได้ แต่**สถานะยังไม่ฟันธง** — ดูหมายเหตุด้านล่าง |
 
-> ⚠️ **หมายเหตุสถานะปัจจุบัน**: กลไก CSV/snapshot (`scripts/run_data_quality_checkpoint.py`,
-> `great_expectations/checkpoints/dq_TEMPLATE.yml`, self-test pair) ตอนนี้อยู่แค่ใน branch
-> `test/data-quality-selftest` **ยังไม่ได้ merge เข้า `dev`/`main`** — บน `dev`/`main` จริง
-> `great_expectations/checkpoints/` ยังว่างเปล่า (มีแค่ `.gitkeep`) แม้ `README.md` จะยังพูดถึง
-> `dq_<name>.yml` เป็นไฟล์ "ขาดไม่ได้" อยู่ก็ตาม — ถ้าจะใช้แนวทางนั้นจริงต้อง merge branch นั้นก่อน
-> คู่มือนี้พูดถึงเฉพาะแนวทาง live check เท่านั้น
+> ⚠️ **สถานะไฟล์ CSV ใน repo นี้ (แก้ไข 2026-09-28): ยังไม่ตัดสินใจ ไม่ใช่ห้ามเด็ดขาด**
+> เคยพูดถึงว่าจะห้ามไฟล์ CSV เด็ดขาด แต่ทีมยังไม่ได้เช็คว่ามี workspace/ทีมอื่นใช้ไฟล์ประเภทนี้
+> อยู่แล้วหรือเปล่า — จนกว่าจะเช็คแน่ชัด **อย่าเพิ่งถือว่า CSV ถูกแบนหรือถูกอนุมัติ** กลไก
+> CSV/snapshot ทั้งชุด (`scripts/run_data_quality_checkpoint.py`,
+> `great_expectations/checkpoints/dq_TEMPLATE.yml`, self-test pair พร้อมไฟล์
+> `dq_selftest_good_data.csv`/`dq_selftest_bad_data.csv`) อยู่แค่ใน branch
+> `test/data-quality-selftest` ยังไม่ได้ merge เข้า `dev`/`main` — ยังใช้ได้ตามปกติถ้าต้องการ
+> แค่คุยกับทีมยืนยันก่อน merge บน `dev`/`main` จริงตอนนี้ `great_expectations/checkpoints/`
+> ยังว่างเปล่า (มีแค่ `.gitkeep`) แม้ `README.md` จะยังพูดถึง `dq_<name>.yml` เป็นไฟล์ "ขาดไม่ได้" อยู่
+> ก็ตาม — ไม่ว่าผลจะออกมายังไง **live check ยังเป็นทางเลือกที่แนะนำสำหรับข้อมูล production จริง** อยู่ดี
 
 ## Architecture
 
@@ -152,7 +175,7 @@ if not all_passed:
 
 6. **เพิ่ม entry ใน `ci-config.yml`** ให้ item ใหม่เป็น `skip_check: true` พร้อม `skip_reason`
    ที่ระบุว่าเช็คผ่าน live gate แทน ไม่ใช่ static definition check (ดูตัวอย่างที่ entry
-   `nb_dqgate_check`/`pl_dqgate_test`/`lh_dqgate_test` ใน `ci-config.yml`)
+   `nb_dqgate_check`/`pl_dqgate_test` ใน `ci-config.yml`)
 
 7. **สั่งให้ CI รัน** ด้วย `scripts/run_live_dq_gate.py --workspace <GUID> --item-type <pipeline|notebook> --item-name <ชื่อ item>`
    — ให้ `--item-type` ตรงกับที่เลือกไว้ในข้อ 4 สคริปต์รองรับทั้ง 2 แบบอยู่แล้ว ไม่ต้องแก้โค้ด
@@ -223,7 +246,7 @@ expectations = [
     # gx.expectations.ExpectColumnMaxToBeBetween(column="<column>", min_value="2026-01-01", max_value="2026-12-31"),
 
     # 7. Integrity — referential integrity ข้ามตาราง GX เช็คแบบ live ตรงๆ ยังไม่รองรับในเทมเพลตนี้
-    # ต้อง query ตารางแม่มาก่อนแล้วเทียบเอง (ดูหมายเหตุใน dq_TEMPLATE.yml ฝั่ง CSV)
+    # ต้อง query ตารางแม่มาก่อนแล้วเทียบเอง
 ]
 
 # ── รันเช็คทุกกฎ + สรุปผล ──────────────────────────────────────────────
@@ -288,14 +311,15 @@ parameter ในข้อ 4 (แบบ A) — กลับไปเพิ่ม�
 ### 3. `ci-config.yml` — entry ให้ item ใหม่
 
 เพิ่มต่อท้ายไฟล์ (1 entry ต่อ item ที่ sync เข้ามา — Notebook + Pipeline ถ้าใช้แบบ A, Lakehouse
-ถ้ามี table ทดสอบที่ไม่มี schema contract จริงให้เช็ค):
+ถ้ามี table ทดสอบที่ไม่มี schema contract จริงให้เช็ค — ดูส่วนที่ 2 ถ้าอยากทำ schema contract จริง
+แทนที่จะ skip):
 
 ```yaml
 <ชื่อ_notebook_item>:
   skip_check: true
   skip_reason: >-
     Live DQ check item (<วันที่ตั้งค่า>) — เช็คผ่าน live gate (scripts/run_live_dq_gate.py)
-    แทน ไม่ใช่ static definition check ดู docs/live-data-quality-guide.md
+    แทน ไม่ใช่ static definition check ดู docs/check-patterns-guide.md
 
 <ชื่อ_pipeline_item>:   # ตัดออกถ้าใช้แบบ B (ไม่มี pipeline)
   skip_check: true
@@ -438,6 +462,219 @@ findings) — **ก่อนใช้จริงให้เช็ค `python -
 | `fabric_items/nb_dqgate_check.Notebook/notebook-content.py` | Notebook ตัวอย่าง (ต้นแบบของเทมเพลตด้านบน) |
 | `fabric_items/pl_dqgate_test.DataPipeline/pipeline-content.json` | Pipeline ตัวอย่าง มี `_inlineInstallationEnabled` |
 | `scripts/run_live_dq_gate.py` | สั่งรัน pipeline ผ่าน Fabric REST API + poll ผล + exit code |
-| `ci-config.yml` | entry `skip_check` ตัวอย่างสำหรับ 3 item ข้างบน |
+| `ci-config.yml` | entry `skip_check` ตัวอย่างสำหรับ item ข้างบน |
 | `.github/workflows/fabric-ci.yml` | job `dq-gate-poc` เรียก `run_live_dq_gate.py` |
 | `DataOps-CICD-Workflow.md` section 14 Phase 7 | findings log เต็มของ POC นี้ |
+
+---
+
+# ส่วนที่ 2 — Schema Contract Check
+
+เช็คว่า Lakehouse/Warehouse item มี **schema contract** (ประกาศ table/column/type ที่คาดหวังไว้)
+ครบและ format ถูกต้องไหม — ตรงกับ check pattern `schema` (1 ใน 5 pattern เดิมของ `ci-config.yml`
+ต่างจาก Live DQ ในส่วนที่ 1 ซึ่งเป็นกลไกแยกนอกระบบ pattern)
+
+## ข้อจำกัดที่ต้องรู้ก่อนใช้
+
+**เช็คได้แค่ "มี contract ประกาศไว้ไหม + format ถูกไหม" เท่านั้น — ไม่ได้เทียบกับ schema จริงบน
+Fabric** เพราะ Fabric Git Integration ไม่ sync ข้อมูล table/column ของ Lakehouse/Warehouse มาให้
+เลย (ตรวจสอบแล้ว — item ที่ sync ลงมามีแค่ `.platform`, `alm.settings.json`,
+`lakehouse.metadata.json` ที่เป็นแค่ `{"defaultSchema": "dbo"}`/`{}`, กับ `shortcuts.metadata.json`
+— ไม่มี column ไหนอยู่ในนั้นเลย) เหตุผลเดียวกับที่ pattern เดิม 5 ตัวต้องเป็น static check ทั้งหมด
+(`test` job รันก่อน deploy เสมอ ไม่มี Fabric ให้เช็คสด — ดู `CLAUDE.md`)
+
+ถ้าต้องการเช็คกับ schema จริงบน Fabric ต้องทำเป็น **live check** แยกต่างหาก (pattern เดียวกับ
+ส่วนที่ 1 — Notebook อ่าน schema จริงมาเทียบ) ซึ่งไม่ใช่ scope ของ pattern `schema` นี้
+
+## รูปแบบ contract (เทมเพลต — copy ไปแก้ต่อได้เลย)
+
+ไฟล์: `schema_contracts/<item_name>.yml` — ชื่อไฟล์ต้องตรงชื่อ item เป๊ะ (เหมือน pattern ของ
+`tests/unit/test_<name>.py` และ `great_expectations/checkpoints/dq_<name>.yml`)
+
+```yaml
+tables:
+  <table_name>:
+    columns:
+      - name: <column_name>
+        type: <string|int|bigint|double|float|boolean|date|timestamp>
+      - name: <column_name_2>
+        type: <...>
+  # เพิ่ม table อื่นในรูปแบบเดียวกันได้ ถ้า Lakehouse/Warehouse นั้นมีหลายตาราง
+```
+
+ดูตัวอย่างจริงที่ใช้งานได้แล้วที่ `schema_contracts/lh_dqgate_test.yml`
+
+## ขั้นตอนตั้งค่าให้ item ใหม่
+
+1. สร้าง `schema_contracts/<item_name>.yml` ตามรูปแบบด้านบน — เติม table/column/type ให้ตรงกับ
+   business schema จริงของ item นั้น (ต้องรู้จริง เดาไม่ได้ — ถ้าไม่รู้ column จริง ให้คงไว้ที่
+   `skip_check: true` ใน `ci-config.yml` ก่อน)
+2. เอา `skip_check: true` ออกจาก entry ของ item นั้นใน `ci-config.yml` (หรือถ้ายังไม่มี entry เลย
+   ไม่ต้องเพิ่มอะไร — `schema` เป็น default ของ Lakehouse/Warehouse อยู่แล้วใน `_defaults`)
+3. รันเช็คในเครื่องก่อน push: `python scripts/validate_schema_contract.py "fabric_items/<item folder>/"`
+   (ต้องมี trailing slash เหมือนที่ `fabric-ci.yml` ส่งเข้าไปจริง)
+
+## วิธีตรวจว่าเช็คผ่านไหม
+
+รันตรงในเครื่อง (ไม่ต้องมี Fabric credential เลย เพราะเป็น static check ล้วนๆ):
+
+```
+python scripts/validate_schema_contract.py "fabric_items/lh_dqgate_test.Lakehouse/"
+```
+
+- **ผ่าน**: print `[validate_schema_contract] ... OK` ทุก column + `... ผ่าน (N table)` จบด้วย
+  exit code 0
+- **ไม่ผ่าน**: print รายการปัญหาที่เจอทั้งหมด (ไม่ใช่แค่จุดแรก) เช่น "ไม่พบ schema contract",
+  "column ไม่มี name", "type ไม่รู้จัก" แล้ว exit code 1
+
+## ไฟล์ที่เกี่ยวข้องทั้งหมด
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `schema_contracts/lh_dqgate_test.yml` | ตัวอย่าง contract จริงที่ใช้งานได้แล้ว (table `dqgate_sample`) |
+| `scripts/validate_schema_contract.py` | ตัวเช็ค — validate ว่า contract มีอยู่จริงและ format ถูก |
+| `ci-config.yml` | `_defaults.Lakehouse`/`_defaults.Warehouse: schema` — item ไหนยังไม่มี contract ให้คง `skip_check: true` ไว้ |
+| `.github/workflows/fabric-ci.yml` | case `schema)` ใน job `test` เรียก `validate_schema_contract.py` |
+
+---
+
+# ส่วนที่ 3 — `unit_test` pattern
+
+Pattern default ของ Notebook ทุกตัว (`_defaults.Notebook: unit_test` ใน `ci-config.yml`) — รัน
+pytest เทียบ logic ของ Notebook กับ mock DataFrame ที่เขียนขึ้นเอง **ไม่แตะ Fabric จริงเลย**
+(เป็น static check เหมือน `structure`/`schema` — รันก่อน deploy ได้ปกติ)
+
+## แนวคิด
+
+Notebook เขียนโค้ดเป็น**ฟังก์ชัน** (ไม่ใช่ script รันทื่อๆ ทั้งไฟล์) แล้ว test import ฟังก์ชันนั้น
+มาทดสอบกับ input ปลอมที่ควบคุมเอง — วิธีนี้ทดสอบ **logic** ได้จริง (เช่น "ถ้า input แบบนี้ output
+ต้องเป็นแบบนี้") แต่ทดสอบ**ข้อมูลจริง**ไม่ได้ (นั่นคือหน้าที่ของ Live DQ Gate ในส่วนที่ 1 แทน)
+
+## เทมเพลต (copy ไปแก้ต่อได้เลย)
+
+**ไฟล์: `tests/unit/test_<item_name>.py`** — ชื่อไฟล์ต้องตรงชื่อ Notebook item เป๊ะ
+
+```python
+import importlib.util
+import os
+
+import pandas as pd
+
+_NOTEBOOK_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..",
+    "fabric_items", "<item_name>.Notebook", "notebook-content.py",
+)
+
+_spec = importlib.util.spec_from_file_location("<item_name>", _NOTEBOOK_PATH)
+_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_module)
+
+# ดึงฟังก์ชันที่ Notebook ประกาศไว้มาทดสอบตรงๆ
+my_check_function = _module.my_check_function
+
+
+def test_passes_with_good_input():
+    df = pd.DataFrame({"column_name": [10, 5, 0]})
+    assert my_check_function(df) is True
+
+
+def test_fails_with_bad_input():
+    df = pd.DataFrame({"column_name": [10, None, 0]})
+    assert my_check_function(df) is False
+```
+
+ตัวอย่างจริงที่ใช้ pattern นี้อยู่แล้ว: `tests/unit/test_nb_fern_dq_check.py`,
+`tests/unit/test_nb_test_source_and_destination.py`
+
+**สิ่งที่ต้องแก้เสมอ**:
+- `_NOTEBOOK_PATH` ให้ตรง path ของ Notebook item จริง
+- `my_check_function` เป็นชื่อฟังก์ชันจริงที่ Notebook นั้นประกาศไว้ (ต้อง refactor โค้ด Notebook
+  ให้เป็นฟังก์ชันก่อน ถ้ายังเป็น script เปลือยๆ ทั้งไฟล์อยู่ — import แบบนี้จะรันทั้งไฟล์ทันทีตอน
+  `exec_module()` ซึ่งอาจ error ถ้ามีโค้ดที่พึ่ง `spark`/`notebookutils` อยู่นอกฟังก์ชัน)
+- เขียน test case ให้ครอบคลุมทั้งเคสผ่านและเคส fail อย่างน้อยอย่างละ 1 เคส
+
+## ข้อควรรู้
+
+`ci-config.yml` มี fail-safe: ถ้า item ไหนไม่มี entry และไม่มี `_defaults` ตรงกับ type — fallback
+เป็น `unit_test` เสมอ (เข้มสุด) แปลว่า **Notebook ใหม่ทุกตัวต้องมี `tests/unit/test_<name>.py`
+ตั้งแต่วันแรก** ไม่งั้น CI fail ทันที (`::error::[$name] check=unit_test but no test found`)
+
+---
+
+# ส่วนที่ 4 — `structure` pattern
+
+Pattern default ของ Data Pipeline ทุกตัว (`_defaults.DataPipeline: structure`) — **ไม่มีเทมเพลต
+ให้ copy ต่อ item** เพราะเป็น script กลางตัวเดียว (`scripts/validate_pipeline_structure.py`) ที่
+ทำงานอัตโนมัติกับทุก Data Pipeline โดยไม่ต้องเขียนอะไรเพิ่มเลย
+
+## ทำงานยังไง
+
+เช็คว่า activity ในไฟล์ `pipeline-content.json` ที่อ้างอิงถึง item อื่น (ผ่าน key เช่น
+`notebookId`/`dataflowId`/`pipelineId` ใน `typeProperties`) ชี้ไปที่ `logicalId` ที่มี item จริง
+ประกาศไว้ใน `fabric_items/` (สแกนจาก `.platform` ทุกไฟล์แบบ recursive) ไหม — ถ้า pipeline ชี้ไปหา
+item ที่ไม่มีอยู่จริง (dangling reference) ถือว่า structure ผิด
+
+## เมื่อไหร่ต้องทำอะไรเพิ่ม
+
+**ปกติไม่ต้องทำอะไรเลย** — สร้าง Pipeline ผ่าน UI ตามปกติ (กฎ UI-first เหมือนเดิม) แล้ว sync เข้า
+git ตัว validator จะเช็คให้เองอัตโนมัติ ต้องเข้าไปแก้ก็ต่อเมื่อ:
+- เพิ่ม activity type ใหม่ที่มี reference key ไม่อยู่ในชุดที่รู้จัก (`REFERENCE_KEYS` ในไฟล์
+  `validate_pipeline_structure.py`) — เพิ่ม key นั้นเข้าไปใน tuple ได้เลย
+- Pipeline ไม่มี activity เลย (ตั้งใจทำ pipeline เปล่า) — จะ fail เพราะ validator ถือว่า pipeline
+  ต้องมีอย่างน้อย 1 activity เสมอ ถ้าตั้งใจจริงต้องใช้ `skip_check: true` แทน
+
+## ไฟล์ที่เกี่ยวข้อง
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `scripts/validate_pipeline_structure.py` | ตัวเช็คเดียว ใช้กับทุก Data Pipeline |
+| `.github/workflows/fabric-ci.yml` | case `structure)` ใน job `test` |
+
+---
+
+# ส่วนที่ 5 — `data_quality` (CSV) pattern เดิม
+
+## กลไกเดิม
+
+อยู่บน branch `test/data-quality-selftest` (ยังไม่ merge เข้า `dev`/`main`): อ่านไฟล์ CSV fixture
+ที่ commit ไว้ใน repo ผ่าน `scripts/run_data_quality_checkpoint.py` แล้ว validate ด้วย GX —
+รูปแบบ config (`great_expectations/checkpoints/dq_<name>.yml`):
+
+```yaml
+data_file: great_expectations/fixtures/<ชื่อไฟล์>.csv
+dtype:
+  <column>: str
+expectations:
+  - expectation_type: expect_column_values_to_not_be_null
+    kwargs:
+      column: <column>
+```
+
+## ก่อนจะ merge branch นี้เข้า `dev`/`main` จริง
+
+เช็คก่อนว่ามี workspace/ทีมอื่นในองค์กรใช้ไฟล์ CSV แบบนี้เป็นส่วนหนึ่งของ workflow อยู่แล้วไหม
+(เช่น pipeline อื่นที่อ่าน/เขียน CSV เป็นปกติ) — ถ้ามี อาจกระทบ/ซ้อนทับกับของที่มีอยู่แล้ว ถ้าไม่มี
+ก็ merge ได้ตามปกติ ยังไม่มีข้อห้ามทางเทคนิคอะไรที่บังคับให้เปลี่ยนรูปแบบไฟล์
+
+---
+
+# ส่วนที่ 6 — `none` pattern
+
+ตรงไปตรงมาที่สุด — ประกาศว่า item นี้**ไม่ต้องเช็คอะไรเลย โดยตั้งใจ** ไม่มีเทมเพลตเพราะไม่มีอะไรให้
+เขียน
+
+```yaml
+<item_name>:
+  check: none
+```
+
+## ต่างจาก `skip_check: true` ยังไง
+
+| | `check: none` | `skip_check: true` |
+|---|---|---|
+| ความหมาย | ไม่มี check ที่ควรทำเลย (ตั้งใจแบบถาวร) | มี check pattern ที่ "ควรจะ" ทำอยู่ (ระบุไว้ใน `_defaults`/entry) แต่ตอนนี้ยังไม่ทำ |
+| ต้องมี reason ไหม | ไม่ต้อง | **ต้องมี** `skip_reason` เสมอ (ไม่งั้น CI fail) |
+| ใช้เมื่อไหร่ | item ที่ไม่มีทางมี check ที่มีความหมายเลย (เช่น item ทดลองที่จะลบทิ้งเร็วๆ นี้) | item ที่ "ควรมี" check แต่ยังไม่ได้เขียน (หนี้ทางเทคนิคที่ต้องกลับมาทำ) |
+
+โดยทั่วไปแนะนำใช้ `skip_check: true` มากกว่า เพราะยังคง label ไว้ว่า item นี้ "เป็นหนี้" check
+อะไรอยู่ (เห็นได้จาก Job Summary table) ต่างจาก `check: none` ที่ทำให้ดูเหมือนไม่มีอะไรต้องทำเลย
