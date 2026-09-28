@@ -87,3 +87,16 @@ find_replace:
       _ALL_: "1f670883-97a3-4171-af57-a25e16a3a8b8"
     item_type: "Notebook"
     item_name: "nb_endpoint_test_b"
+
+# --- nb_dqgate_check (section 14 Phase 7: live DQ-gate POC) ---
+# ลืม remap ตอนสร้าง POC เพราะตอนนั้นทดสอบอยู่แค่ใน dev เดียว ไม่เคยข้าม environment มาก่อน —
+# พอ deploy-prod publish เข้า spl-cicd-prd จริง (PR #93) notebook ยัง attach lakehouse ตัวเดิม
+# ของ dev อยู่ (workspace_id ถูก remap แล้วโดย rule ทั่วไปด้านบน แต่ lakehouse GUID ยังไม่ถูก
+# remap เพราะเป็นคนละ GUID จาก lh_test_lakehouse) ทำให้ prod workspace + dev lakehouse GUID
+# ผสมกันแล้ว spark.catalog/saveAsTable หา table ไม่เจอ (Metastore error ตอนรันจริงใน prod)
+# เหมือน pattern เดิมของ lh_test_lakehouse ด้านบนเป๊ะ (same-workspace ไม่ใช่ cross-workspace
+# แบบ endpoint) เลยใช้ $items.Lakehouse.<name>.$id ได้เลย ไม่ต้อง hardcode GUID ต่อ environment
+  - find_value: "f41ea854-ad42-4c83-b646-492bfc22e7a8"
+    replace_value:
+      _ALL_: "$items.Lakehouse.lh_dqgate_test.$id"
+    item_type: "Notebook"
