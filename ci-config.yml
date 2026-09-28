@@ -81,3 +81,23 @@ lh_endpoint_test_c:
     Pilot test item (2026-09-18) — Test C ของ section 14 Phase 6 (พิสูจน์ว่าเพิ่ม
     endpoint item ใหม่ผ่าน endpoint-targets.yml อย่างเดียวได้จริง ไม่ต้องแก้
     fabric-ci.yml) ไม่มี schema contract จริงให้เช็ค เหมือน endpoint item ตัวอื่น
+
+nb_dqgate_check:
+  skip_check: true
+  skip_reason: >-
+    Live DQ-gate POC item (2026-09-28) — GX check นี้ต้องรันจริงบน Fabric (Spark) ไม่ใช่
+    ผ่าน mock DataFrame แบบ unit_test ทั่วไป ดังนั้นเช็คผ่าน job "dq-gate-poc" ใน
+    fabric-ci.yml (scripts/run_live_dq_gate.py สั่งรัน pl_dqgate_test แล้ว poll ผลจริง)
+    แทน ไม่ใช่ static definition check — ดู DataOps-CICD-Workflow.md section 14
+
+pl_dqgate_test:
+  skip_check: true
+  skip_reason: >-
+    Live DQ-gate POC item (2026-09-28) คู่กับ nb_dqgate_check — ดูเหตุผลเดียวกัน
+    เช็คผ่าน live pipeline run (job "dq-gate-poc") ไม่ใช่ static structure check
+
+lh_dqgate_test:
+  skip_check: true
+  skip_reason: >-
+    Live DQ-gate POC item (2026-09-28) — Lakehouse เปล่าที่มีแค่ table ทดสอบ 1 ตัวสำหรับ
+    POC นี้โดยเฉพาะ ไม่มี schema contract จริงให้เช็ค เหมือน endpoint item ตัวอื่น
