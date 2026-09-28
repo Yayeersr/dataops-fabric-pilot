@@ -298,12 +298,23 @@ jobs:
   # section 14) — nb_dqgate_check/pl_dqgate_test/lh_dqgate_test ถูก skip_check ไว้ใน
   # ci-config.yml เพราะเช็คผ่าน job นี้แทน ไม่ใช่ static definition check
   #
-  # ตั้งใจให้ trigger แบบ manual (workflow_dispatch) เท่านั้นตอนนี้ ไม่ auto-run ทุก push —
-  # เนื้อหา notebook (GX check) และการต่อสาย Notebook Activity ใน pipeline ยังต้องทำผ่าน
-  # Fabric UI ให้เสร็จก่อน (item ถูกสร้างเป็น shell เปล่าผ่าน Fabric API ไว้แล้ว) พอ verify
-  # end-to-end ผ่านทั้งเคส good/bad data แล้วค่อยพิจารณาเปลี่ยนเป็น auto-trigger
+  # Auto-trigger เฉพาะตอน push เข้า main เท่านั้น (ไม่ใช่ staging — staging ยังไม่มี Fabric
+  # workspace จริงให้ deploy/เช็ค ดู README ข้อ 6 — เปิด auto-trigger ที่นั่นตอนนี้จะ fail ทันที
+  # เพราะหา item ไม่เจอ) เช็คที่ workspace spl-cicd-prd (production) ไม่ใช่ dev เพราะจุดประสงค์คือ
+  # verify ของที่เพิ่ง deploy ขึ้น production จริง ไม่ใช่แค่เช็คว่า dev ยัง healthy — ต้องรอ
+  # deploy-prod publish item พวกนี้เข้า prod ให้เสร็จก่อนเสมอ (needs: deploy-prod) ใช้
+  # `needs.deploy-prod.result == 'success'` แทนแค่ needs เฉยๆ เพราะ deploy-prod เองมี `if`
+  # ที่ skip ได้ (เช่นตอน trigger แบบ workflow_dispatch) — ถ้าไม่เช็ค result explicit แบบนี้
+  # job นี้จะถูก skip ไปด้วยตอน deploy-prod skip ทำให้ manual trigger ใช้ไม่ได้
+  #
+  # ยังเปิด workflow_dispatch ไว้เป็น fallback เผื่ออยากสั่งเช็คมือ (จะข้าม deploy-prod
+  # ไปเลย เช็คของที่ deploy อยู่ใน prod ตอนนั้น ไม่ได้ deploy ใหม่ให้)
   dq-gate-poc:
-    if: github.event_name == 'workflow_dispatch'
+    needs: deploy-prod
+    if: |
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy-prod.result == 'success'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -311,8 +322,8 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: Run live DQ gate against pl_dqgate_test (spl-cicd-dev)
-        run: python scripts/run_live_dq_gate.py --workspace 7a829f6b-4fd1-45c7-8c8e-b7c317816e4b --pipeline-name pl_dqgate_test
+      - name: Run live DQ gate against pl_dqgate_test (spl-cicd-prd)
+        run: python scripts/run_live_dq_gate.py --workspace 84cc9682-9946-44a6-83b4-9275ebfb9834 --item-type pipeline --item-name pl_dqgate_test
         env:
           FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
           FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}

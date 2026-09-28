@@ -32,6 +32,7 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 | `scripts/generate_ci_config.py` | bulk-generate `ci-config.yml` จาก item ที่มีจริง | ตอน onboard item จำนวนมากครั้งแรก |
 | `scripts/generate_parameter.py` | bulk-generate `parameter.yml` จาก metadata ที่ Fabric ฝังไว้ใน notebook | หลังเพิ่ม Notebook ที่ attach lakehouse ใหม่ |
 | `scripts/debug_parameterization.py` | validate `parameter.yml` แบบ offline ไม่ต้องมี Azure credential | ก่อน push เช็ค syntax เร็ว ๆ |
+| `scripts/run_live_dq_gate.py` | สั่งรัน pipeline ที่มี live GX check ข้างในผ่าน Fabric REST API + รอผล | ทำ data quality gate ที่เช็คข้อมูลจริงบน Fabric (ไม่ใช่ CSV fixture) — ดูวิธีใช้เต็มที่ [`docs/live-data-quality-guide.md`](docs/live-data-quality-guide.md) |
 
 ### ยังไม่ได้ใช้จริง (draft)
 
