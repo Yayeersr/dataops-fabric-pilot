@@ -96,8 +96,23 @@ pl_dqgate_test:
     Live DQ-gate POC item (2026-09-28) คู่กับ nb_dqgate_check — ดูเหตุผลเดียวกัน
     เช็คผ่าน live pipeline run (job "dq-gate-poc") ไม่ใช่ static structure check
 
-lh_dqgate_test:
+# lh_dqgate_test ไม่มี entry แล้ว — ใช้ default schema ของ Lakehouse ตรงๆ ตั้งแต่
+# scripts/validate_schema_contract.py มี logic จริงแล้ว (2026-09-28) มี contract อยู่ที่
+# schema_contracts/lh_dqgate_test.yml (ตาราง dqgate_sample: id/qty) เป็น item แรกที่ใช้
+# pattern schema จริง — item Lakehouse อื่นยังไม่มี contract เขียนไว้ (ไม่รู้ business columns
+# จริง เดาไม่ได้) เลยยัง skip_check ต่อไปจนกว่าจะมีคนเขียน contract ให้
+
+lh_test_lakehouse:
   skip_check: true
   skip_reason: >-
-    Live DQ-gate POC item (2026-09-28) — Lakehouse เปล่าที่มีแค่ table ทดสอบ 1 ตัวสำหรับ
-    POC นี้โดยเฉพาะ ไม่มี schema contract จริงให้เช็ค เหมือน endpoint item ตัวอื่น
+    ไม่เคยมี entry มาก่อนเลย — พึ่ง _defaults.Lakehouse: schema เฉยๆ ตอนที่
+    validate_schema_contract.py ยังเป็น stub (return True เสมอ) เลยผ่านมาตลอดแบบเงียบๆ
+    (2026-09-28) พอ script มี logic จริงแล้วเจอว่าไม่มี schema contract จริงให้เช็ค — ยัง
+    ไม่รู้ business columns จริงของ item นี้ เดาไม่ได้ ต้องรอคนที่รู้มาเขียน
+    schema_contracts/lh_test_lakehouse.yml ให้ก่อน
+
+lh_mcp_test:
+  skip_check: true
+  skip_reason: >-
+    เหตุผลเดียวกับ lh_test_lakehouse (2026-09-28) — ไม่เคยมี entry มาก่อน พึ่ง default เฉยๆ
+    ตอนที่ schema check ยังเป็น stub ยังไม่มี schema contract จริงให้เช็ค

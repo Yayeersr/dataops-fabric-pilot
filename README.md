@@ -16,6 +16,7 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 | `tests/unit/test_<name>.py` | test คู่กับ Notebook แต่ละตัว (ชื่อต้องตรงชื่อ item เป๊ะ) |
 | `great_expectations/checkpoints/dq_<name>.yml` | checkpoint คู่กับ item ที่ check = `data_quality` |
 | `scripts/validate_pipeline_structure.py`, `validate_schema_contract.py` | script กลางสำหรับ check = `structure` / `schema` |
+| `schema_contracts/<name>.yml` | contract คู่กับ item ที่ check = `schema` (Lakehouse/Warehouse) — ประกาศ table/column/type ที่คาดหวังไว้ ชื่อไฟล์ต้องตรงชื่อ item เป๊ะ เหมือน `tests/unit/test_<name>.py`; เช็คได้แค่ "มี contract ประกาศไว้ไหม + format ถูกไหม" เท่านั้น ไม่ได้เทียบกับ schema จริงบน Fabric (Git Integration ไม่ sync ข้อมูลนี้มาให้) — ดูวิธีใช้เต็มที่ [`docs/check-patterns-guide.md`](docs/check-patterns-guide.md) (ส่วนที่ 2) ตัวอย่างจริงที่ `schema_contracts/lh_dqgate_test.yml` |
 
 ### CD (deploy จริง) — ขาดไม่ได้
 
@@ -32,7 +33,7 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 | `scripts/generate_ci_config.py` | bulk-generate `ci-config.yml` จาก item ที่มีจริง | ตอน onboard item จำนวนมากครั้งแรก |
 | `scripts/generate_parameter.py` | bulk-generate `parameter.yml` จาก metadata ที่ Fabric ฝังไว้ใน notebook | หลังเพิ่ม Notebook ที่ attach lakehouse ใหม่ |
 | `scripts/debug_parameterization.py` | validate `parameter.yml` แบบ offline ไม่ต้องมี Azure credential | ก่อน push เช็ค syntax เร็ว ๆ |
-| `scripts/run_live_dq_gate.py` | สั่งรัน pipeline ที่มี live GX check ข้างในผ่าน Fabric REST API + รอผล | ทำ data quality gate ที่เช็คข้อมูลจริงบน Fabric (ไม่ใช่ CSV fixture) — ดูวิธีใช้เต็มที่ [`docs/live-data-quality-guide.md`](docs/live-data-quality-guide.md) |
+| `scripts/run_live_dq_gate.py` | สั่งรัน pipeline ที่มี live GX check ข้างในผ่าน Fabric REST API + รอผล | ทำ data quality gate ที่เช็คข้อมูลจริงบน Fabric (ไม่ใช่ CSV fixture) — ดูวิธีใช้เต็มที่ [`docs/check-patterns-guide.md`](docs/check-patterns-guide.md) (ส่วนที่ 1) |
 
 ### ยังไม่ได้ใช้จริง (draft)
 
