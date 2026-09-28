@@ -1,6 +1,6 @@
 """
 สั่งรัน item ที่มี live DQ check อยู่ข้างใน (Data Pipeline หรือ Notebook ตรงๆ ก็ได้ — ดู
-docs/live-data-quality-guide.md) ผ่าน Fabric REST API On-Demand Job แล้ว poll job instance
+docs/check-patterns-guide.md ส่วนที่ 1) ผ่าน Fabric REST API On-Demand Job แล้ว poll job instance
 จนจบ — พิสูจน์ว่าถ้า GX check ข้างในทำ raise เพราะข้อมูลเสีย จะทำให้ job instance fail จริง
 และ CI เห็น/บล็อกได้ (ต่างจาก scripts/run_data_quality_checkpoint.py ที่เช็คแค่ CSV fixture
 ในเครื่อง CI runner เอง ไม่ได้แตะข้อมูลจริงบน Fabric เลย)
