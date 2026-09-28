@@ -5,6 +5,7 @@ on:
     branches: [ 'dev', 'main', 'feature/**' ]
   pull_request:
     branches: [ 'staging', 'main' ]
+  workflow_dispatch:   # ใช้กับ job dq-gate-poc ด้านล่าง — manual trigger เท่านั้นตอนนี้
 
 jobs:
   test:
@@ -285,6 +286,33 @@ jobs:
             ENVIRONMENT=dev
           fi
           python scripts/deploy_endpoints.py --environment "$ENVIRONMENT"
+        env:
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
+  # Live DQ-gate POC — พิสูจน์ว่า GX check ที่รันจริงบน Fabric (Spark) ผ่าน nb_dqgate_check
+  # (เรียกจาก pl_dqgate_test) ทำให้ pipeline job instance fail จริงถ้าข้อมูลเสีย ต่างจาก
+  # check pattern data_quality เดิมที่เช็คแค่ CSV fixture ในเครื่อง CI runner เอง ไม่แตะ Fabric
+  # เลย (ดู great_expectations/checkpoints/dq_TEMPLATE.yml กับ DataOps-CICD-Workflow.md
+  # section 14) — nb_dqgate_check/pl_dqgate_test/lh_dqgate_test ถูก skip_check ไว้ใน
+  # ci-config.yml เพราะเช็คผ่าน job นี้แทน ไม่ใช่ static definition check
+  #
+  # ตั้งใจให้ trigger แบบ manual (workflow_dispatch) เท่านั้นตอนนี้ ไม่ auto-run ทุก push —
+  # เนื้อหา notebook (GX check) และการต่อสาย Notebook Activity ใน pipeline ยังต้องทำผ่าน
+  # Fabric UI ให้เสร็จก่อน (item ถูกสร้างเป็น shell เปล่าผ่าน Fabric API ไว้แล้ว) พอ verify
+  # end-to-end ผ่านทั้งเคส good/bad data แล้วค่อยพิจารณาเปลี่ยนเป็น auto-trigger
+  dq-gate-poc:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Run live DQ gate against pl_dqgate_test (spl-cicd-dev)
+        run: python scripts/run_live_dq_gate.py --workspace 7a829f6b-4fd1-45c7-8c8e-b7c317816e4b --pipeline-name pl_dqgate_test
         env:
           FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
           FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
