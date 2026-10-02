@@ -284,9 +284,24 @@ jobs:
           FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
           FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
 
+  # needs ใส่ dq-gate-dev เพิ่มเข้ามาด้วย (นอกจาก test) แต่ "เพื่อการจัดกราฟใน GitHub Actions
+  # UI เท่านั้น" ไม่ได้มีผลกับ logic การรันจริงเลย — dq-gate-dev ทำงานเฉพาะ event pull_request
+  # ส่วน deploy-prod ทำงานเฉพาะ event push เข้า main สอง event นี้เกิดพร้อมกันไม่ได้ (1 run
+  # มาจาก 1 event เสมอ) แปลว่า dq-gate-dev เป็น 'skipped' เสมอทุกครั้งที่ deploy-prod ทำงานจริง
+  # ไม่ใช่บางครั้ง — ใส่ needs ตรงนี้แค่เพื่อให้ GitHub วาดกราฟให้ dq-gate-dev ต่อก่อน deploy-prod
+  # (แทนที่จะถูกจัดกลุ่มรวมกับ deploy-endpoints ซึ่งไม่เกี่ยวข้องกันเลย) ต้องใช้
+  # `if: always() && ... (needs.dq-gate-dev.result == 'success' || == 'skipped')` แทนแค่
+  # needs เฉยๆ เพราะ default behavior ของ GitHub คือถ้า job ใน needs โดน skip จะ skip
+  # job ถัดไปด้วยเสมอ (pattern เดียวกับที่ dq-gate-poc ใช้กับ deploy-prod ด้านล่าง) — ถ้าจะ
+  # ลบ dq-gate-dev ออกจาก needs นี้ทีหลัง (เช่นตอน refactor) ไม่กระทบ production เลยเพราะเป็น
+  # cosmetic ล้วนๆ ไม่ใช่ real gate (ดูคอมเมนต์เหนือ job dq-gate-dev สำหรับ gate ตัวจริง)
   deploy-prod:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, dq-gate-dev]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production   # ต้องไปสร้าง environment ชื่อ "production" ใน Settings → Environments
                                # แล้วเพิ่ม Required reviewers ก่อน ไม่งั้น deploy จะรันทันทีไม่มีใครเช็คก่อน
