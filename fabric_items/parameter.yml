@@ -100,12 +100,3 @@ find_replace:
     replace_value:
       _ALL_: "$items.Lakehouse.lh_dqgate_test.$id"
     item_type: "Notebook"
-
-# --- pl_dqgate_test (section 14 Phase 7: live DQ-gate POC) ---
-# Notebook activity (Notebook1) ฝัง notebookId ของ nb_dqgate_check (Dev) เป็นรูปแบบ "สลับ" (canonical form คือ bd4de907-e94f-46c5-aebe-3fb683c13123) และ workspaceId เป็น
-# 00000000... placeholder (notebook อยู่ workspace เดียวกับ pipeline) — ไม่มี rule นี้ pipeline ใน prod จะ
-# ชี้ notebook id ของ Dev ที่ไม่มีอยู่ใน spl-cicd-prd เจอโดย scripts/generate_parameter_all_types.py
-  - find_value: "83c13123-3fb6-aebe-46c5-e94fbd4de907"
-    replace_value:
-      _ALL_: "$items.Notebook.nb_dqgate_check.$id"
-    item_type: "DataPipeline"
