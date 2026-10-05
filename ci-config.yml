@@ -85,16 +85,19 @@ lh_endpoint_test_c:
 nb_dqgate_check:
   skip_check: true
   skip_reason: >-
-    Live DQ-gate POC item (2026-09-28) — GX check นี้ต้องรันจริงบน Fabric (Spark) ไม่ใช่
-    ผ่าน mock DataFrame แบบ unit_test ทั่วไป ดังนั้นเช็คผ่าน job "dq-gate-poc" ใน
-    fabric-ci.yml (scripts/run_live_dq_gate.py สั่งรัน pl_dqgate_test แล้ว poll ผลจริง)
-    แทน ไม่ใช่ static definition check — ดู DataOps-CICD-Workflow.md section 14
+    Live DQ-gate POC item (2026-09-28, อัปเดต 2026-10-02) — GX check นี้ต้องรันจริงบน
+    Fabric (Spark) ไม่ใช่ผ่าน mock DataFrame แบบ unit_test ทั่วไป ดังนั้นเช็คผ่าน job
+    "dq-gate-dev" (pre-deploy gate ที่ spl-cicd-dev, ยิงตอน PR) และ "dq-gate-poc"
+    (post-deploy smoke test ที่ spl-cicd-prd, ยิงหลัง deploy-prod) ใน fabric-ci.yml แทน
+    (ทั้งคู่เรียก scripts/run_live_dq_gate.py สั่งรัน pl_dqgate_test แล้ว poll ผลจริง)
+    ไม่ใช่ static definition check — ดู DataOps-CICD-Workflow.md section 14 Phase 7
 
 pl_dqgate_test:
   skip_check: true
   skip_reason: >-
-    Live DQ-gate POC item (2026-09-28) คู่กับ nb_dqgate_check — ดูเหตุผลเดียวกัน
-    เช็คผ่าน live pipeline run (job "dq-gate-poc") ไม่ใช่ static structure check
+    Live DQ-gate POC item (2026-09-28, อัปเดต 2026-10-02) คู่กับ nb_dqgate_check —
+    ดูเหตุผลเดียวกัน เช็คผ่าน live pipeline run (job "dq-gate-dev" ก่อน deploy และ
+    "dq-gate-poc" หลัง deploy) ไม่ใช่ static structure check
 
 # lh_dqgate_test ไม่มี entry แล้ว — ใช้ default schema ของ Lakehouse ตรงๆ ตั้งแต่
 # scripts/validate_schema_contract.py มี logic จริงแล้ว (2026-09-28) มี contract อยู่ที่

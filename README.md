@@ -33,6 +33,8 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 | `scripts/generate_ci_config.py` | bulk-generate `ci-config.yml` จาก item ที่มีจริง | ตอน onboard item จำนวนมากครั้งแรก |
 | `scripts/generate_parameter.py` | bulk-generate `parameter.yml` จาก metadata ที่ Fabric ฝังไว้ใน notebook | หลังเพิ่ม Notebook ที่ attach lakehouse ใหม่ |
 | `scripts/debug_parameterization.py` | validate `parameter.yml` แบบ offline ไม่ต้องมี Azure credential | ก่อน push เช็ค syntax เร็ว ๆ |
+| `scripts/generate_parameter_all_types.py` | หา GUID ที่ต้อง remap ทุก item type โดยเทียบกับ item จริงใน Dev ผ่าน Fabric REST API (แยก logicalId ที่ `fabric-cicd` จัดการให้เองออกจาก GUID ที่ต้องดูเอง) ต้องมี credential อ่าน Dev ได้ | หลังเพิ่ม item ใหม่ที่อาจฝัง GUID ของ Dev — รัน `--dry-run` ก่อนเสมอ |
+| `scripts/verify_deployed_guids.py` | ตรวจหลัง deploy ว่าไม่มี GUID ของ Dev ตกค้างใน item ของ target (อ่านอย่างเดียว) — PASS แปลว่าไม่ชี้กลับ Dev ไม่ได้พิสูจน์ว่าชี้ถูกที่ GUID ที่ขึ้น INFO ต้องมีคนตรวจ ใช้เวลา ~2.5 นาที | หลัง deploy ไป prod ทุกครั้ง |
 | `scripts/run_live_dq_gate.py` | สั่งรัน pipeline ที่มี live GX check ข้างในผ่าน Fabric REST API + รอผล | ทำ data quality gate ที่เช็คข้อมูลจริงบน Fabric (ไม่ใช่ CSV fixture) — ดูวิธีใช้เต็มที่ [`docs/check-patterns-guide.md`](docs/check-patterns-guide.md) (ส่วนที่ 1) |
 
 ### ยังไม่ได้ใช้จริง (draft)

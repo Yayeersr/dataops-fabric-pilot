@@ -15,12 +15,6 @@
 # ถ้ามี env key อื่นปนอยู่ด้วย fabric-cicd จะ validation fail)
 
 find_replace:
-  # default_lakehouse + known_lakehouses.id (lakehouse artifact id ของ Dev)
-  - find_value: "a7654c8c-f870-4bb7-8a88-fe3866b9c2a9"
-    replace_value:
-      _ALL_: "$items.Lakehouse.lh_test_lakehouse.$id"
-    item_type: "Notebook"
-
   # default_lakehouse_workspace_id (workspace id ของ Dev)
   - find_value: "7a829f6b-4fd1-45c7-8c8e-b7c317816e4b"
     replace_value:

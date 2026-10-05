@@ -75,7 +75,9 @@ jobs:
                   echo "::error::[$name] check=data_quality but no checkpoint found (expected great_expectations/checkpoints/dq_${name}.yml)"
                   missing=1
                 else
-                  great_expectations checkpoint run "dq_${name}"
+                  # ไม่ใช่ `great_expectations checkpoint run` — GX 1.x ตัด CLI ออกหมดแล้ว
+                  # (ดู docstring ของ scripts/run_data_quality_checkpoint.py)
+                  python scripts/run_data_quality_checkpoint.py "dq_${name}"
                 fi
                 ;;
 
@@ -238,9 +240,68 @@ jobs:
               });
             }
 
-  deploy-prod:
+  # Gate 1 (pre-deploy, blocking): ตรวจข้อมูลจริงที่ spl-cicd-dev ก่อนอนุญาต merge PR
+  # ที่ promote ออกจาก dev (dev → staging, dev → main) — ต่างจาก dq-gate-poc ด้านล่างซึ่งรัน
+  # "หลัง" deploy-prod เสร็จแล้ว (= post-deploy smoke test, ของเสียขึ้น prod ไปแล้วก่อนรู้ผล)
+  # ดู DataOps-CICD-Workflow.md section 14 Phase 7 ("ทางที่ทำให้เป็น pre-deploy gate ได้เลย
+  # โดยไม่ต้องรอ staging") สำหรับเหตุผลเต็มว่าทำไมเช็คที่ dev ถึงนับเป็น pre-deploy gate จริง
+  #
+  # ใช้ spl-cicd-dev ได้เลยโดยไม่ต้องรอ staging workspace เพราะ dev เป็น environment ต้นทาง —
+  # Fabric Git Integration sync spl-cicd-dev ↔ branch dev โดยตรง ไม่มีขั้น deploy-dev ให้ต้องรอ
+  # โค้ดที่อยู่ใน PR นี้ "รันอยู่บน dev แล้ว" ตั้งแต่ก่อนเปิด PR
+  #
+  # ยิงบน pull_request (ไม่ใช่ push) เพื่อให้เป็น blocking gate ผ่าน required status check —
+  # ต้องไปเปิด Settings → Branches → require status check "dq-gate-dev" บนทั้ง staging และ main
+  # เองด้วย ไม่งั้น job นี้แดงแต่ merge ได้อยู่ ไม่ได้เป็น gate จริง (ยังไม่ได้เปิดในรีโปนี้)
+  #
+  # needs: test ก่อน — ไม่ต้องเสียเวลาจุด Spark session เป็นนาทีถ้า 5 check pattern ยังไม่ผ่าน
+  #
+  # ⚠️ ข้อจำกัด: ผ่านที่ dev ไม่การันตีว่า prod สะอาด (คนละ Lakehouse ID คนละข้อมูล) —
+  # ห้ามเอา dq-gate-poc ที่ prod ออกเพราะ job นี้ไม่ได้มาแทน แค่เพิ่มชั้น gate ก่อนหน้า
+  # ⚠️ ถ้า base_ref == 'main' หมายถึง PR staging → main ด้วย — ตอนนี้ยังชี้ไปที่ dev
+  # เป็นการชั่วคราวเพราะยังไม่มี staging workspace จริง พอสร้างแล้วต้องแยกเป็น job ใหม่ที่ชี้
+  # staging workspace ID แทน ไม่งั้นจะได้ gate ที่ข้าม staging ไปเลยทั้งที่มี staging แล้ว
+  dq-gate-dev:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'staging' || github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: dq-gate-dev-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Run live DQ gate against pl_dqgate_test (spl-cicd-dev)
+        run: python scripts/run_live_dq_gate.py --workspace 7a829f6b-4fd1-45c7-8c8e-b7c317816e4b --item-type pipeline --item-name pl_dqgate_test
+        env:
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
+  # needs ใส่ dq-gate-dev เพิ่มเข้ามาด้วย (นอกจาก test) แต่ "เพื่อการจัดกราฟใน GitHub Actions
+  # UI เท่านั้น" ไม่ได้มีผลกับ logic การรันจริงเลย — dq-gate-dev ทำงานเฉพาะ event pull_request
+  # ส่วน deploy-prod ทำงานเฉพาะ event push เข้า main สอง event นี้เกิดพร้อมกันไม่ได้ (1 run
+  # มาจาก 1 event เสมอ) แปลว่า dq-gate-dev เป็น 'skipped' เสมอทุกครั้งที่ deploy-prod ทำงานจริง
+  # ไม่ใช่บางครั้ง — ใส่ needs ตรงนี้แค่เพื่อให้ GitHub วาดกราฟให้ dq-gate-dev ต่อก่อน deploy-prod
+  # (แทนที่จะถูกจัดกลุ่มรวมกับ deploy-endpoints ซึ่งไม่เกี่ยวข้องกันเลย) ต้องใช้
+  # `if: always() && ... (needs.dq-gate-dev.result == 'success' || == 'skipped')` แทนแค่
+  # needs เฉยๆ เพราะ default behavior ของ GitHub คือถ้า job ใน needs โดน skip จะ skip
+  # job ถัดไปด้วยเสมอ (pattern เดียวกับที่ dq-gate-poc ใช้กับ deploy-prod ด้านล่าง) — ถ้าจะ
+  # ลบ dq-gate-dev ออกจาก needs นี้ทีหลัง (เช่นตอน refactor) ไม่กระทบ production เลยเพราะเป็น
+  # cosmetic ล้วนๆ ไม่ใช่ real gate (ดูคอมเมนต์เหนือ job dq-gate-dev สำหรับ gate ตัวจริง)
+  deploy-prod:
+    needs: [test, dq-gate-dev]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production   # ต้องไปสร้าง environment ชื่อ "production" ใน Settings → Environments
                                # แล้วเพิ่ม Required reviewers ก่อน ไม่งั้น deploy จะรันทันทีไม่มีใครเช็คก่อน
