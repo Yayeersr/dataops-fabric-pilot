@@ -6,21 +6,32 @@
 ## ทำไมต้องมี
 
 `dq-gate-poc` รันหลัง `deploy-prod` — ถ้าเจอของเสียก็ขึ้น production ไปแล้ว (ตรวจได้ แต่กันไม่ได้)
-`dq-gate-dev` (ตรวจที่ Dev ตอนเปิด PR) เป็นตัวทดแทนชั่วคราว: ผ่านที่ Dev ไม่การันตีว่า prod สะอาด และต้องตั้งเป็น
-required check ถึงจะบล็อกได้จริง
+`dq-gate-dev` (ตรวจที่ Dev ตอนเปิด PR) ผ่านที่ Dev ไม่การันตีว่า prod สะอาด และต้องตั้งเป็น required check ถึงจะบล็อกได้จริง
 
-เป้าหมายคือลำดับนี้: **PR → deploy ไป staging → ตรวจ DQ ที่ staging → (ผ่านแล้วถึง) merge เข้า main → deploy-prod**
+เป้าหมาย: **ตรวจ DQ ก่อน deploy ไป workspace ถัดไปทุกครั้ง** — Dev gate → staging → staging gate → prod
 
-## ลำดับ job เมื่อเปิดใช้งาน (บน pull_request ที่ชี้ `main` หรือ `staging`)
+## ลำดับ pipeline (gate อยู่ก่อน deploy ไป workspace ถัดไปเสมอ)
 
 ```
-test ─┬─ deploy-staging ─┬─ dq-gate-staging        ← gate ตัวจริง (ตั้งเป็น required check)
-      │                  └─ verify-staging-guids   ← รายงาน GUID ของ Dev ที่ตกค้าง (ยังไม่บล็อก)
-      └─ dq-gate-dev  ← ถูกข้ามอัตโนมัติเมื่อมี STAGING_WORKSPACE_ID
+test → dq-gate-dev → deploy-staging ─┬─ dq-gate-staging ─┬─ deploy-prod → dq-gate-poc
+                                     └─ verify-staging-guids (รายงาน ไม่บล็อก)
+                                                         └─ deploy-endpoints (รอ gate เดียวกับ deploy-prod)
 ```
 
-บน push เข้า `main` jobs ชุดนี้ไม่รัน (เป็น PR-only) `deploy-prod` ทำงานตามเดิม และ `dq-gate-poc` ยังรันหลัง deploy-prod
-เป็นชั้นยืนยัน (ไม่ใช่ gate)
+| job | รันเมื่อ | บทบาท |
+|---|---|---|
+| `dq-gate-dev` | `pull_request` → `main`/`staging` | gate ที่ Dev ก่อน deploy ไป staging (ตั้งเป็น required check ได้) |
+| `deploy-staging` | PR → `main`/`staging` **และ** push เข้า `main` เมื่อมี `STAGING_WORKSPACE_ID` | deploy ไป staging |
+| `dq-gate-staging` | หลัง `deploy-staging` สำเร็จ (PR และ push) | gate ที่ staging ก่อน deploy ไป prod |
+| `deploy-prod` / `deploy-endpoints` (prod) | push เข้า `main` | **ไม่รันถ้า `deploy-staging` หรือ `dq-gate-staging` ล้มเหลว** |
+| `dq-gate-poc` | หลัง `deploy-prod` | ยืนยันหลัง deploy (ไม่ใช่ gate) |
+
+สองชั้นกัน: (1) บน PR gate ที่ staging เป็น required check ก่อน merge (2) บน push เข้า `main` run เดียวกันรัน
+staging ซ้ำก่อน `deploy-prod` — ชั้นนี้กันของเสียขึ้น prod แม้ไม่ได้ตั้ง required check (แลกกับ deploy staging 2 ครั้งต่อ release)
+บน push เข้า `dev` gate พวกนี้เป็น `skipped` ตามปกติ และ `deploy-endpoints` ไป dev ได้เหมือนเดิม
+
+ตอนนี้ (ยังไม่ตั้ง `STAGING_WORKSPACE_ID`): `deploy-staging` / `dq-gate-staging` / `verify-staging-guids` เป็น `skipped`
+ซึ่งยอมรับได้ใน `needs` ของ `deploy-prod` จึงทำงานเหมือนก่อนหน้า
 
 ## ขั้นตอนเปิดใช้งาน (ทำตามลำดับ)
 
@@ -30,15 +41,14 @@ test ─┬─ deploy-staging ─┬─ dq-gate-staging        ← gate ตั�
    และ (สำหรับ `verify-staging-guids`) อ่าน Dev workspace ได้ด้วย
 3. **ตั้ง repo variable** `STAGING_WORKSPACE_ID` = GUID ของ staging
    (Settings → Secrets and variables → Actions → **Variables** ไม่ใช่ Secrets)
-4. **ทดลองด้วย PR ทดลอง** ชี้ `main` (หรือ `staging`) แล้วดูว่า 3 job ผ่านและ `dq-gate-dev` ถูก skip
-5. **ตั้ง required status check** บน `main`: เปิด `dq-gate-staging` (และเอา `dq-gate-dev` ออกถ้าเคยตั้งไว้)
+4. **ทดลองด้วย PR ทดลอง** ชี้ `main` (หรือ `staging`) แล้วดูว่า `dq-gate-dev` → `deploy-staging` → `dq-gate-staging` รันตามลำดับ และทดลอง push เข้า `main` ครั้งแรกโดยดูว่า `deploy-prod` รอผล gate (เช็คกรณีล้มเหลวด้วยการทำให้ gate แดงหนึ่งครั้ง)
+5. **ตั้ง required status check** บน `main`: `dq-gate-dev` และ `dq-gate-staging`
    Settings → Branches → branch protection rule ของ `main` → Require status checks
-   - ถ้าไม่ตั้ง job แดงแล้วก็ยัง merge ได้ — ไม่ได้เป็น gate จริง
-   - job ที่ถูก skip เพราะเงื่อนไข (`if`) GitHub รายงานเป็นผ่านสำหรับ required check ดังนั้นตั้งทั้ง `dq-gate-dev` และ
-     `dq-gate-staging` พร้อมกันได้ ตัวที่ไม่ทำงานจะไม่บล็อก — แต่แนะนำเอา `dq-gate-dev` ออกเมื่อเปลี่ยนมาใช้ staging เพื่อไม่ให้สับสน
+   - ถ้าไม่ตั้ง job แดงแล้วก็ยัง merge ได้ — แต่ `deploy-prod` ยังถูกบล็อกตอน push (ชั้นที่สอง)
+   - job ที่ถูก skip เพราะเงื่อนไข (`if`) GitHub รายงานเป็นผ่านสำหรับ required check
 6. หลัง `verify-staging-guids` รันผ่านเสถียรสองสามครั้ง ให้ลบ `continue-on-error: true` เพื่อให้เป็น gate
 
-## ต้องตัดสินใจ/เช็คก่อนเปิดใช้งาน (ยังไม่ได้แก้ในพีอาร์นี้)
+## ต้องตัดสินใจ/เช็คก่อนเปิดใช้งาน (ยังไม่ได้แก้)
 
 - **rule ของ endpoint ใช้ `_ALL_`** — ใน `fabric_items/parameter.yml` rule ของ `nb_endpoint_test` / `nb_endpoint_test_b`
   แทน workspace/lakehouse id เป็นของ **endpoint-prod** กับทุก environment ถ้า deploy ไป staging item พวกนี้

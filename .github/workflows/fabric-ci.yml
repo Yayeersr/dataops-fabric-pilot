@@ -263,13 +263,12 @@ jobs:
   # staging workspace ID แทน ไม่งั้นจะได้ gate ที่ข้าม staging ไปเลยทั้งที่มี staging แล้ว
   dq-gate-dev:
     needs: test
-    # ถูกแทนที่ด้วย deploy-staging → dq-gate-staging ด้านล่างทันทีที่ตั้ง repo variable STAGING_WORKSPACE_ID
-    # (ตอนนั้น job นี้จะ 'skipped' ซึ่งนับเป็นผ่านสำหรับ required status check — ให้เปลี่ยนไปบังคับ
-    # dq-gate-staging แทน) ดู docs/staging-gate.md
+    # ลำดับ pipeline: test → dq-gate-dev → deploy-staging → dq-gate-staging → deploy-prod → dq-gate-poc
+    # (ทุก gate อยู่ "ก่อน" deploy ไป workspace ถัดไป) — job นี้ gate ก่อน deploy-staging
+    # รันเฉพาะบน pull_request จึง 'skipped' บน push (ปกติ ไม่ใช่ปัญหา) ดู docs/staging-gate.md
     if: |
       github.event_name == 'pull_request' &&
-      (github.base_ref == 'staging' || github.base_ref == 'main') &&
-      vars.STAGING_WORKSPACE_ID == ''
+      (github.base_ref == 'staging' || github.base_ref == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
@@ -293,17 +292,28 @@ jobs:
   # แทนการตรวจหลัง deploy-prod ที่ของเสียขึ้น production ไปแล้ว
   #
   # เปิดใช้งาน: ตั้ง repo variable STAGING_WORKSPACE_ID (Settings → Secrets and variables → Actions
-  # → Variables) เป็น GUID ของ staging workspace — ถ้ายังไม่ตั้ง ทั้ง 3 job นี้ถูกข้ามหมด และ
-  # dq-gate-dev ด้านบนยังเป็น gate อยู่ตามเดิม ขั้นตอนเต็มและข้อควรระวังอยู่ใน docs/staging-gate.md
+  # → Variables) เป็น GUID ของ staging workspace — ถ้ายังไม่ตั้ง ทั้ง 3 job นี้ถูกข้ามหมด (deploy-prod
+  # จึงรอแค่ dq-gate-dev/test เหมือนเดิม) ขั้นตอนเต็มและข้อควรระวังอยู่ใน docs/staging-gate.md
+  #
+  # รัน 2 ครั้งต่อ 1 release โดยตั้งใจ: (1) บน pull_request → main/staging (gate ก่อน merge)
+  # (2) บน push เข้า main (gate ก่อน deploy-prod ใน run เดียวกัน — ตัวนี้คือตัวกันของเสียขึ้น prod ที่แท้จริง
+  # แม้จะไม่ได้ตั้ง required check ก็ตาม เพราะ deploy-prod needs ผลของ gate นี้)
+  #
+  # `always()` + เช็ค result ของ dq-gate-dev เอง เพราะ dq-gate-dev เป็น 'skipped' เสมอบน push และ
+  # default ของ GitHub คือ skip job ถัดไปตามถ้า needs ถูก skip
   #
   # ⚠️ ยังไม่เคยรันจริง (ไม่มี staging workspace ให้ทดสอบ) — ทดสอบรอบแรกกับ PR ทดลองก่อนบังคับเป็น
   # required check
   deploy-staging:
-    needs: test
+    needs: [test, dq-gate-dev]
     if: |
-      github.event_name == 'pull_request' &&
-      (github.base_ref == 'staging' || github.base_ref == 'main') &&
-      vars.STAGING_WORKSPACE_ID != ''
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
+      vars.STAGING_WORKSPACE_ID != '' &&
+      ((github.event_name == 'pull_request' &&
+        (github.base_ref == 'staging' || github.base_ref == 'main')) ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # staging workspace มีใบเดียวร่วมกันทุก PR — เข้าคิวทีละงาน ไม่ยกเลิกงานที่กำลัง deploy อยู่
@@ -359,7 +369,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
-      group: dq-gate-staging-${{ github.event.pull_request.number }}
+      # บน push ไม่มีเลข PR — ใช้ sha แทน ไม่งั้นทุก push จะแชร์ group เดียวกันแล้ว cancel กันเอง
+      group: dq-gate-staging-${{ github.event.pull_request.number || github.sha }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -374,23 +385,24 @@ jobs:
           FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
           FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
 
-  # needs ใส่ dq-gate-dev เพิ่มเข้ามาด้วย (นอกจาก test) แต่ "เพื่อการจัดกราฟใน GitHub Actions
-  # UI เท่านั้น" ไม่ได้มีผลกับ logic การรันจริงเลย — dq-gate-dev ทำงานเฉพาะ event pull_request
-  # ส่วน deploy-prod ทำงานเฉพาะ event push เข้า main สอง event นี้เกิดพร้อมกันไม่ได้ (1 run
-  # มาจาก 1 event เสมอ) แปลว่า dq-gate-dev เป็น 'skipped' เสมอทุกครั้งที่ deploy-prod ทำงานจริง
-  # ไม่ใช่บางครั้ง — ใส่ needs ตรงนี้แค่เพื่อให้ GitHub วาดกราฟให้ dq-gate-dev ต่อก่อน deploy-prod
-  # (แทนที่จะถูกจัดกลุ่มรวมกับ deploy-endpoints ซึ่งไม่เกี่ยวข้องกันเลย) ต้องใช้
-  # `if: always() && ... (needs.dq-gate-dev.result == 'success' || == 'skipped')` แทนแค่
-  # needs เฉยๆ เพราะ default behavior ของ GitHub คือถ้า job ใน needs โดน skip จะ skip
-  # job ถัดไปด้วยเสมอ (pattern เดียวกับที่ dq-gate-poc ใช้กับ deploy-prod ด้านล่าง) — ถ้าจะ
-  # ลบ dq-gate-dev ออกจาก needs นี้ทีหลัง (เช่นตอน refactor) ไม่กระทบ production เลยเพราะเป็น
-  # cosmetic ล้วนๆ ไม่ใช่ real gate (ดูคอมเมนต์เหนือ job dq-gate-dev สำหรับ gate ตัวจริง)
+  # needs: dq-gate-dev ยังเป็นแค่ "จัดกราฟ" (cosmetic) เพราะ dq-gate-dev รันเฉพาะ pull_request และ
+  # deploy-prod รันเฉพาะ push เข้า main — จึง 'skipped' เสมอบน push (gate จริงของ dq-gate-dev
+  # คือ required check ตอน merge PR)
+  #
+  # แต่ deploy-staging / dq-gate-staging เป็น "gate จริง" ใน run เดียวกัน: ถ้าตั้ง STAGING_WORKSPACE_ID
+  # แล้ว deploy-prod จะไม่รันถ้า deploy-staging หรือ dq-gate-staging ล้มเหลว (result == 'failure'/
+  # 'cancelled') — ถ้ายังไม่ตั้ง ทั้งสองเป็น 'skipped' และ deploy-prod ทำงานเหมือนเดิม
+  #
+  # ใช้ `always()` + เช็ค result ที่ยอมรับได้ ('success' หรือ 'skipped') เองทุกตัว เพราะ default ของ
+  # GitHub คือ skip job ถัดไปตามถ้า job ใน needs ถูก skip (pattern เดียวกับ dq-gate-poc ด้านล่าง)
   deploy-prod:
-    needs: [test, dq-gate-dev]
+    needs: [test, dq-gate-dev, deploy-staging, dq-gate-staging]
     if: |
       always() &&
       needs.test.result == 'success' &&
       (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
+      (needs.dq-gate-staging.result == 'success' || needs.dq-gate-staging.result == 'skipped') &&
       github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production   # ต้องไปสร้าง environment ชื่อ "production" ใน Settings → Environments
@@ -418,9 +430,18 @@ jobs:
   # ไม่ใช่รอต่อคิว — ส่วน item หลายตัวภายใน job นี้เอง (ถ้ามีหลาย endpoint พร้อมกัน)
   # จะ deploy เรียงกันไปทีละตัว (sequential) ไม่ใช่ parallel กันเอง แลกกับความง่ายในการ
   # ดูแล ถ้าอนาคตมี endpoint จำนวนมากจนรอไม่ไหว ค่อยพิจารณาทำเป็น matrix job แทน
+  #
+  # needs ชุดเดียวกับ deploy-prod เพื่อไม่ให้ endpoint ของ prod ถูก deploy ก่อนที่ gate จะผ่าน (บน dev push
+  # gate พวกนี้เป็น 'skipped' เสมอ จึงไม่กระทบ deploy ไป dev) — ยังไม่ต้องรอ deploy-prod เอง
   deploy-endpoints:
-    needs: test
-    if: (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+    needs: [test, dq-gate-dev, deploy-staging, dq-gate-staging]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
+      (needs.dq-gate-staging.result == 'success' || needs.dq-gate-staging.result == 'skipped') &&
+      (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || '' }}
     steps:
