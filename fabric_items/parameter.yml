@@ -42,6 +42,18 @@ find_replace:
       _ALL_: "$items.Warehouse.wh_test_warehouse.$id"
     item_type: "DataPipeline"
 
+# --- endpoint rules: ผูกกับ environment `prod` เท่านั้น (เดิมใช้ _ALL_) ---
+# ค่าเหมือนเดิมทุกตัว (deploy-prod ส่ง --environment prod จึงได้ผลเหมือนเดิม) แต่เปลี่ยนจาก _ALL_ เป็น key `prod`
+# เพื่อกันไม่ให้ deploy ไป staging แล้ว nb_endpoint_test* ถูก remap ไปชี้ endpoint-PROD (เขียนข้อมูลลง prod จาก staging)
+# ถ้า environment ไม่มี key นี้ fabric-cicd จะข้าม rule (ไม่ error) — staging จึงคงค่าเดิมของ endpoint-dev ไว้
+#
+# เปิดใช้ตอนมี endpoint workspace ของ staging: เพิ่ม key `staging:` ในแต่ละ rule ด้านล่าง เช่น
+#     replace_value:
+#       prod: "<ค่า prod>"
+#       staging: "<workspace id / lakehouse id ของ endpoint staging>"   # ← เพิ่มบรรทัดนี้
+# (ใช้ _ALL_ ปนกับ key อื่นไม่ได้ — fabric-cicd จะ validation fail) ดู docs/staging-gate.md
+# ⚠️ lakehouse id ที่ hardcode จะพังเมื่อ lakehouse ถูกสร้างใหม่ (เกิดแล้วกับ rule ของ prod ด้านล่าง) ถ้าเลี่ยงได้
+#    ให้ notebook หา lakehouse จากชื่อตอนรันแทนการ remap id
 # --- nb_endpoint_test (section 14 Phase 6: cross-workspace pipeline → endpoint deploy) ---
 # ต่างจาก entry ด้านบน: Lakehouse ปลายทางอยู่คนละ workspace จาก pipeline/notebook เอง
 # (spl-cicd-endpoint-dev/prd ไม่ใช่ spl-cicd-dev/prd) ทำให้ $items.<type>.<name>.$id /
@@ -51,7 +63,7 @@ find_replace:
   # workspace id ของ endpoint (เขียนตรงเป็น abfss:// path ในโค้ด ไม่ใช้ default_lakehouse attach)
   - find_value: "30e32f68-1cee-419b-be00-c0671b00f7af"
     replace_value:
-      _ALL_: "88302912-33a1-4435-bb8a-814b8cbc4808"
+      prod: "88302912-33a1-4435-bb8a-814b8cbc4808"
     item_type: "Notebook"
     item_name: "nb_endpoint_test"
 
@@ -60,7 +72,7 @@ find_replace:
   # (2026-09-18, ผ่าน onelake_list-items/core_search-catalog) — เปิด rule จริงแล้ว
   - find_value: "04a575b1-f277-4fa2-84d4-5214992b8ed0"
     replace_value:
-      _ALL_: "c1ac5acf-2e59-4cdd-921a-a35a9eb9c6e5"
+      prod: "c1ac5acf-2e59-4cdd-921a-a35a9eb9c6e5"
     item_type: "Notebook"
     item_name: "nb_endpoint_test"
 
@@ -70,7 +82,7 @@ find_replace:
   # workspace id ของ endpoint (เหมือนของ nb_endpoint_test แต่ scope แยกต่างหากตาม item_name)
   - find_value: "30e32f68-1cee-419b-be00-c0671b00f7af"
     replace_value:
-      _ALL_: "88302912-33a1-4435-bb8a-814b8cbc4808"
+      prod: "88302912-33a1-4435-bb8a-814b8cbc4808"
     item_type: "Notebook"
     item_name: "nb_endpoint_test_b"
 
@@ -78,7 +90,7 @@ find_replace:
   # หลัง deploy-prod-endpoint-b รันครั้งแรก (2026-09-18)
   - find_value: "e68b8bb0-0ddb-44db-af00-bfd5b855a1ce"
     replace_value:
-      _ALL_: "1f670883-97a3-4171-af57-a25e16a3a8b8"
+      prod: "1f670883-97a3-4171-af57-a25e16a3a8b8"
     item_type: "Notebook"
     item_name: "nb_endpoint_test_b"
 
