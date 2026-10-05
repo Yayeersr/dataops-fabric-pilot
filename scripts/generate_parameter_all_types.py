@@ -9,14 +9,17 @@ Generate/update fabric_items/parameter.yml สำหรับ Fabric item "ท�
 
 หลักการ:
     1. GET /v1/workspaces/{dev}/items -> {guid: (type, displayName)} + workspace id ของ Dev เอง
-    2. เตรียม GUID ทั้ง 2 representation ต่อ item: canonical และ รูปแบบสลับ (Fabric ฝังบางจุดเป็น
-       รูปแบบสลับ เช่น Warehouse/Lakehouse artifactId ใน DataPipeline — ดู DataOps-CICD-Workflow.md section 14)
-    3. สแกนทุกไฟล์ text ใน item folder (ข้าม .platform เพราะ logicalId ไม่ใช่ id จริงและไม่ต้อง remap)
-    4. เจอ GUID ที่ตรงกับ item ใน Dev -> เขียน find_replace entry:
+    2. สแกนทุกไฟล์ text ใน item folder (ข้าม .platform) หา GUID ของ item/workspace ใน Dev ตามที่เขียนไว้ตรงๆ
+    3. เจอ GUID ที่ตรงกับ item ใน Dev -> เขียน find_replace entry:
          find_value   = สตริงตามที่เจอในไฟล์จริง (คง format/ตัวพิมพ์เดิม)
          replace_value= {_ALL_: "$items.<Type>.<name>.$id"} หรือ "$workspace.$id"
          item_type    = type ของ item ที่ไฟล์นั้นอยู่ (ไม่ใช่ type ของ item ที่ถูกอ้างถึง)
-    5. GUID ที่เจอแต่ไม่ตรงกับ item ใน Dev (เช่น external Connection ID, item ข้าม workspace)
+    4. GUID ที่ตรงกับ logicalId ใน .platform ของ item ใน repo -> ไม่สร้าง entry: fabric-cicd แทน logicalId
+       เป็น id จริงของ target ให้เองตอน publish อยู่แล้ว (ยืนยันจาก pl_dqgate_test: notebookId = logicalId
+       ของ nb_dqgate_check และ prod ชี้ notebook ของ prod ถูกต้องโดยไม่มี rule) แค่รายงานไว้เฉยๆ
+       — logicalId ของ item ที่สร้างผ่าน UI หน้าตาเหมือน id จริงของ Dev ที่ถูกสลับบล็อก จึงห้ามเอา
+       "สลับบล็อก" มาเดาเป็น id ของ Dev (เคยทำแล้วได้ rule ซ้ำซ้อน)
+    5. GUID อื่นที่ไม่ตรงกับ item ใน Dev หรือ logicalId (เช่น external Connection ID, item ข้าม workspace)
        -> แค่เตือน ไม่เดาให้ ต้องกรอกเอง
 
 ข้อจำกัด:
@@ -36,6 +39,7 @@ Generate/update fabric_items/parameter.yml สำหรับ Fabric item "ท�
 
 import argparse
 import io
+import json
 import os
 import re
 import sys
@@ -57,23 +61,6 @@ FABRIC_API = "https://api.fabric.microsoft.com/v1"
 GUID_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![0-9a-fA-F])")
 NULL_GUID = "00000000-0000-0000-0000-000000000000"
 SKIP_FILES = {".platform"}
-
-
-def byte_swap_guid(guid):
-    """
-    แปลง canonical -> รูปแบบ "สลับ" ที่ Fabric ฝังใน DataPipeline (ยืนยันกับ 3 คู่จริงใน dataops-fabric-pilot:
-    Lakehouse artifactId, Warehouse artifactId, Notebook id ใน pl_dqgate_test)
-
-    ไม่ใช่ mixed-endian (swap byte ใน 3 กลุ่มแรก) — เป็นการเรียง hex 32 ตัวเป็นบล็อกแล้วกลับลำดับบล็อก:
-        canonical  a(8)-b(4)-c(4)-d(4)-e1(4)e2(8)
-        swapped    e2(8)-e1(4)-d(4)-c(4)-b(4)a(8)
-    ตัวอย่าง: a7654c8c-f870-4bb7-8a88-fe3866b9c2a9 -> 66b9c2a9-fe38-8a88-4bb7-f870a7654c8c
-    ทำซ้ำสองครั้งได้ค่าเดิม
-    """
-    h = guid.lower().replace("-", "")
-    a, b, c, d, e1, e2 = h[0:8], h[8:12], h[12:16], h[16:20], h[20:24], h[24:32]
-    r = e2 + e1 + d + c + b + a
-    return f"{r[0:8]}-{r[8:12]}-{r[12:16]}-{r[16:20]}-{r[20:32]}"
 
 
 def load_workspace_alias(name):
@@ -135,6 +122,14 @@ def iter_text_files(item_dir):
                 continue  # binary file ข้ามไป
 
 
+def read_logical_id(item_dir):
+    try:
+        with open(os.path.join(item_dir, ".platform"), encoding="utf-8") as f:
+            return json.load(f)["config"]["logicalId"].lower()
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", default="dev", help="Dev workspace GUID หรือ alias ใน workspace-config.yml")
@@ -151,21 +146,27 @@ def main():
 
     repo_items = {(t, n) for n, t, _ in iter_item_dirs()}
 
-    # lookup: guid (lowercase, ทั้ง canonical และ byte-swapped) -> (replace_value, label)
+    # logicalId ของ item ใน repo (จาก .platform) — fabric-cicd แทนเป็น id จริงของ target ให้เองตอน publish
+    logical_ids = {}
+    for name, fabric_type, item_dir in iter_item_dirs():
+        lid = read_logical_id(item_dir)
+        if lid:
+            logical_ids[lid] = f"{name}.{fabric_type}"
+
+    # lookup: id จริงของ item/workspace ใน Dev (lowercase) -> (replace_value, label)
     lookup, not_in_repo = {}, []
     lookup[dev_workspace_id] = ("$workspace.$id", "workspace")
-    lookup[byte_swap_guid(dev_workspace_id)] = ("$workspace.$id", "workspace (byte-swapped)")
     for guid, (itype, iname) in dev_items.items():
         if (itype, iname) not in repo_items:
             not_in_repo.append((itype, iname, guid))
             continue
         target = f"$items.{itype}.{iname}.$id"
         lookup[guid] = (target, f"{itype}.{iname}")
-        lookup[byte_swap_guid(guid)] = (target, f"{itype}.{iname} (byte-swapped)")
 
     # (find_value ตามที่เจอจริง, item_type ของไฟล์ที่เจอ) -> (replace_value, label, [item names ที่เจอ])
     found = {}
     unknown = defaultdict(set)  # guid -> {item ที่เจอ}
+    auto_logical = defaultdict(set)  # logicalId ที่เจอ -> {item ที่เจอ}
     for name, fabric_type, item_dir in sorted(iter_item_dirs()):
         for path, text in iter_text_files(item_dir):
             for match in set(GUID_RE.findall(text)):
@@ -176,6 +177,8 @@ def main():
                     replace, label = lookup[key]
                     entry = found.setdefault((match, fabric_type), (replace, label, set()))
                     entry[2].add(f"{name}.{fabric_type}")
+                elif key in logical_ids:
+                    auto_logical[match].add(f"{name}.{fabric_type}")
                 else:
                     unknown[match].add(f"{name}.{fabric_type}")
 
@@ -195,9 +198,15 @@ def main():
     if not_in_repo:
         print("\n⚠️  item ใน Dev ที่ไม่มี folder ใน repo (ถ้ามี item อื่นอ้างถึง จะ remap ด้วย $items ไม่ได้):")
         for itype, iname, guid in sorted(not_in_repo):
-            hits = [g for g in (guid, byte_swap_guid(guid)) if g in {k.lower() for k in unknown}]
-            flag = "  <-- ถูกอ้างถึงใน repo!" if hits else ""
+            flag = "  <-- ถูกอ้างถึงใน repo!" if guid in {k.lower() for k in unknown} else ""
             print(f"  - {itype}.{iname} ({guid}){flag}")
+
+    if auto_logical:
+        print("\nℹ️  GUID ที่เป็น logicalId ของ item ใน repo (fabric-cicd แทนให้เองตอน publish — ไม่ต้องมี rule):")
+        for guid, where in sorted(auto_logical.items()):
+            has_rule = any(g == guid for g, _ in existing_keys)
+            print(f"  - {guid} = {logical_ids[guid.lower()]}  (เจอใน {', '.join(sorted(where))})"
+                  + ("  [มี rule เดิมอยู่แล้ว — เช็คว่าจำเป็นจริงไหม]" if has_rule else ""))
 
     if unknown:
         print("\n⚠️  GUID ที่เจอใน repo แต่ไม่ตรงกับ item/workspace ของ Dev (external Connection, ข้าม workspace, หรืออื่นๆ — ต้องเช็ค/กรอกเอง):")
