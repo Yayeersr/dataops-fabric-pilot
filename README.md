@@ -41,7 +41,7 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 
 | ไฟล์ | สถานะ |
 |---|---|
-| `deploy-test-job.yml` | รอสร้าง staging workspace ก่อนถึงจะเอาไปรวมเข้า `fabric-ci.yml` ได้ |
+| `deploy-test-job.yml` | draft เก่า — ถูกแทนที่ด้วย job `deploy-staging` / `dq-gate-staging` ที่เตรียมไว้ใน `fabric-ci.yml` แล้ว (ยังไม่ทำงานจนกว่าจะตั้ง `STAGING_WORKSPACE_ID`) ดู [`docs/staging-gate.md`](docs/staging-gate.md) |
 
 ---
 
