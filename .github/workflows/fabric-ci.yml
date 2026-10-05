@@ -385,6 +385,35 @@ jobs:
           FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
           FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
 
+  # Endpoint workspace ของ staging (เตรียมไว้ — ยังไม่เปิดใช้) — deploy endpoint item (เช่น lh_endpoint_test_a/b/c)
+  # เข้า workspace endpoint ของ staging ก่อน deploy-prod ตามหลักการเดียวกับ staging ฝั่งหลัก
+  #
+  # ไม่ต้องแก้ไฟล์นี้อีกเมื่อมี workspace จริง: อ่านเป้าหมายจาก `targets.staging` ใน endpoint-targets.yml
+  # (ตอนนี้เป็นคอมเมนต์ ยังไม่มีค่า) — ถ้าไม่มี entry ไหนมี target staging สคริปต์ deploy_endpoints.py จะพิมพ์ notice
+  # แล้วจบแบบไม่ผิดพลาด (no-op) ส่วนตัว job นี้ถูกข้ามเองเมื่อ deploy-staging ถูกข้าม (ยังไม่ตั้ง STAGING_WORKSPACE_ID)
+  # ขั้นตอนเปิดใช้เต็มอยู่ใน docs/staging-gate.md ส่วน "Endpoint workspace ของ staging"
+  deploy-endpoints-staging:
+    needs: deploy-staging
+    if: needs.deploy-staging.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # endpoint workspace ของ staging มีใบเดียวร่วมกันทุก run — เข้าคิว ไม่ยกเลิกงานที่กำลัง deploy อยู่
+    concurrency:
+      group: staging-endpoint-workspace
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Deploy endpoint items (staging, from endpoint-targets.yml)
+        run: python scripts/deploy_endpoints.py --environment staging
+        env:
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
   # needs: dq-gate-dev ยังเป็นแค่ "จัดกราฟ" (cosmetic) เพราะ dq-gate-dev รันเฉพาะ pull_request และ
   # deploy-prod รันเฉพาะ push เข้า main — จึง 'skipped' เสมอบน push (gate จริงของ dq-gate-dev
   # คือ required check ตอน merge PR)
@@ -396,13 +425,14 @@ jobs:
   # ใช้ `always()` + เช็ค result ที่ยอมรับได้ ('success' หรือ 'skipped') เองทุกตัว เพราะ default ของ
   # GitHub คือ skip job ถัดไปตามถ้า job ใน needs ถูก skip (pattern เดียวกับ dq-gate-poc ด้านล่าง)
   deploy-prod:
-    needs: [test, dq-gate-dev, deploy-staging, dq-gate-staging]
+    needs: [test, dq-gate-dev, deploy-staging, dq-gate-staging, deploy-endpoints-staging]
     if: |
       always() &&
       needs.test.result == 'success' &&
       (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
       (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
       (needs.dq-gate-staging.result == 'success' || needs.dq-gate-staging.result == 'skipped') &&
+      (needs.deploy-endpoints-staging.result == 'success' || needs.deploy-endpoints-staging.result == 'skipped') &&
       github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production   # ต้องไปสร้าง environment ชื่อ "production" ใน Settings → Environments
@@ -434,13 +464,14 @@ jobs:
   # needs ชุดเดียวกับ deploy-prod เพื่อไม่ให้ endpoint ของ prod ถูก deploy ก่อนที่ gate จะผ่าน (บน dev push
   # gate พวกนี้เป็น 'skipped' เสมอ จึงไม่กระทบ deploy ไป dev) — ยังไม่ต้องรอ deploy-prod เอง
   deploy-endpoints:
-    needs: [test, dq-gate-dev, deploy-staging, dq-gate-staging]
+    needs: [test, dq-gate-dev, deploy-staging, dq-gate-staging, deploy-endpoints-staging]
     if: |
       always() &&
       needs.test.result == 'success' &&
       (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
       (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
       (needs.dq-gate-staging.result == 'success' || needs.dq-gate-staging.result == 'skipped') &&
+      (needs.deploy-endpoints-staging.result == 'success' || needs.deploy-endpoints-staging.result == 'skipped') &&
       (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || '' }}

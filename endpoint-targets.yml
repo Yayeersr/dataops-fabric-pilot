@@ -16,18 +16,24 @@
 #               ใส่แค่ environment ที่ item นี้ต้อง deploy จริง ไม่ต้องใส่ครบทุกตัว
 #               (เช่น item ที่ยังไม่มี prod target ก็ใส่แค่ dev พอ)
 
+# staging: ยังไม่มี endpoint workspace ฝั่ง staging (ดู docs/staging-gate.md ส่วน "Endpoint workspace ของ staging")
+# เปิดใช้โดยเอาคอมเมนต์ `# staging:` ในแต่ละ entry ออกแล้วใส่ GUID — job deploy-endpoints-staging ใน
+# .github/workflows/fabric-ci.yml อ่าน key นี้เอง ไม่ต้องแก้ workflow ถ้ายังไม่มี target staging สคริปต์จะ no-op
+#
 lh_endpoint_test_a:
   item_path: lh_endpoint_test_a.Lakehouse
   repo_dir: fabric_items
   targets:
     dev: 30e32f68-1cee-419b-be00-c0671b00f7af    # spl-cicd-endpoint-dev
     prod: 88302912-33a1-4435-bb8a-814b8cbc4808   # spl-cicd-endpoint-prd
+    # staging: <GUID ของ endpoint workspace ฝั่ง staging>   # ยังไม่เปิดใช้ — ดู docs/staging-gate.md
 
 lh_endpoint_test_b:
   item_path: lh_endpoint_test_b.Lakehouse
   repo_dir: fabric_items_endpoint
   targets:
     prod: 88302912-33a1-4435-bb8a-814b8cbc4808   # spl-cicd-endpoint-prd
+    # staging: <GUID ของ endpoint workspace ฝั่ง staging>   # ยังไม่เปิดใช้ — ดู docs/staging-gate.md
     # ไม่มี dev target — lh_endpoint_test_b authored ตรงใน spl-cicd-endpoint-dev เอง
     # (Test B: independent git channel) ไม่ต้อง deploy เข้า dev แยก เพราะมันอยู่ที่นั่นแล้ว
 
@@ -39,4 +45,5 @@ lh_endpoint_test_c:
   repo_dir: fabric_items_endpoint
   targets:
     prod: 88302912-33a1-4435-bb8a-814b8cbc4808   # spl-cicd-endpoint-prd
+    # staging: <GUID ของ endpoint workspace ฝั่ง staging>   # ยังไม่เปิดใช้ — ดู docs/staging-gate.md
     # ไม่มี dev target — authored ตรงใน spl-cicd-endpoint-dev เอง เหมือน Test B
