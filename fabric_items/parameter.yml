@@ -20,3 +20,18 @@ find_replace:
     replace_value:
       _ALL_: "$workspace.$id"
     item_type: "Notebook"
+
+  # --- Lab: nb_<ชื่อ>_lab เขียนเข้า lh_endpoint_lab ใน endpoint workspace (คนละ workspace
+  # จาก Notebook เอง จึงใช้ $items / $workspace.$id ไม่ได้ ต้อง hardcode) ---
+  # rule กว้าง (ไม่ระบุ item_name) ครอบคลุม Notebook ของทุกคนอัตโนมัติ
+  # workspace: spl-cicd-endpoint-dev -> spl-cicd-endpoint-prd
+  - find_value: "30e32f68-1cee-419b-be00-c0671b00f7af"
+    replace_value:
+      _ALL_: "88302912-33a1-4435-bb8a-814b8cbc4808"
+    item_type: "Notebook"
+
+  # lakehouse: lh_endpoint_lab (dev) -> lh_endpoint_lab (prod)
+  - find_value: "846f864e-12e1-40e2-9543-b3e0af1cd7af"
+    replace_value:
+      _ALL_: "9ddb1df7-6657-4de9-86b9-6e2ada96f946"
+    item_type: "Notebook"
