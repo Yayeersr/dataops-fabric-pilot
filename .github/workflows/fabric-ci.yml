@@ -275,17 +275,15 @@ jobs:
       group: dq-gate-dev-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - name: Run live DQ gate against pl_dqgate_test (spl-cicd-dev)
-        run: python scripts/run_live_dq_gate.py --workspace 7a829f6b-4fd1-45c7-8c8e-b7c317816e4b --item-type pipeline --item-name pl_dqgate_test
-        env:
-          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
-          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
-          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+      # ปิดการเช็ค live DQ ชั่วคราว: pl_dqgate_test (+ nb_dqgate_check, lh_dqgate_test) ถูกลบออกจาก
+      # repo และ spl-cicd-dev ไปแล้ว (commit e86cc55 "delete items") — gate จึงหา pipeline ไม่เจอแล้ว fail
+      # คง job นี้ไว้ (ไม่ลบ) เพราะ "dq-gate-dev" เป็น required check ของ main และ job อื่น needs มันอยู่ —
+      # ลบทั้ง job = PR ค้างรอ check ที่ไม่มีวันรายงานผล
+      # จะเปิดกลับ: สร้าง pl_dqgate_test ใน spl-cicd-dev ใหม่ แล้วคืน step "Run live DQ gate" เดิม
+      # (python scripts/run_live_dq_gate.py --workspace 7a829f6b-4fd1-45c7-8c8e-b7c317816e4b
+      #  --item-type pipeline --item-name pl_dqgate_test พร้อม env FABRIC_* จาก secrets)
+      - name: Live DQ gate disabled (pl_dqgate_test removed)
+        run: echo "::notice::dq-gate-dev ปิดอยู่ — pl_dqgate_test ถูกลบออกจาก spl-cicd-dev (ดู comment ใน job นี้เพื่อเปิดกลับ)"
 
   # ===== Staging gate (เตรียมไว้ — ยังไม่ทำงานจนกว่าจะมี staging workspace) =====
   # เป้าหมาย: ตรวจ data quality ที่ staging "ก่อน" อนุญาตให้ merge เข้า main (= ก่อน deploy-prod)
