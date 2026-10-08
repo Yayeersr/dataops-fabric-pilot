@@ -21,76 +21,17 @@ find_replace:
       _ALL_: "$workspace.$id"
     item_type: "Notebook"
 
-# --- เพิ่มโดย generate_parameter.py ---
-  - find_value: 66b9c2a9-fe38-8a88-4bb7-f870a7654c8c
-    replace_value:
-      _ALL_: $items.Lakehouse.lh_test_lakehouse.$id
-    item_type: DataPipeline
-
-# --- pl_test_warehouse_sink (Track A: Copy Data -> Fabric Warehouse native sink test) ---
-  # (workspace id ของ Dev ไม่ต้อง remap สำหรับ pipeline นี้ — sink อยู่ workspace เดียวกับ
-  # pipeline เอง Fabric เลยเก็บ workspaceId เป็น 00000000... placeholder ใน pipeline-content.json
-  # ไม่ใช่ GUID จริง — เช็คแล้วว่า 7a829f6b-... ไม่ปรากฏใน DataPipeline ไฟล์ไหนเลย)
-
-  # warehouse artifact id ของ wh_test_warehouse (Dev) — เก็บใน pipeline-content.json
-  # เป็น GUID แบบ byte-swapped (คนละ representation จาก canonical form ที่เห็นใน URL/Workspace
-  # settings) เจอ pattern เดียวกับที่ทีมเคยเจอมาก่อนกับ Lakehouse (ดู entry ด้านบนของ
-  # 66b9c2a9-fe38-8a88-4bb7-f870a7654c8c ที่แท้จริงคือ a7654c8c-f870-4bb7-8a88-fe3866b9c2a9
-  # แบบ swap เดียวกัน) — canonical form คือ 5924efa0-649c-4203-812f-13f787c77113
-  - find_value: "87c77113-13f7-812f-4203-649c5924efa0"
-    replace_value:
-      _ALL_: "$items.Warehouse.wh_test_warehouse.$id"
-    item_type: "DataPipeline"
-
-# --- nb_endpoint_test (section 14 Phase 6: cross-workspace pipeline → endpoint deploy) ---
-# ต่างจาก entry ด้านบน: Lakehouse ปลายทางอยู่คนละ workspace จาก pipeline/notebook เอง
-# (spl-cicd-endpoint-dev/prd ไม่ใช่ spl-cicd-dev/prd) ทำให้ $items.<type>.<name>.$id /
-# $workspace.$id resolve ไม่ได้ (มันมองเห็นแค่ item ภายใน target workspace ของ deploy
-# ครั้งนั้นเท่านั้น) ต้อง hardcode workspace id + lakehouse id ของ endpoint ต่อ environment แทน
-
-  # workspace id ของ endpoint (เขียนตรงเป็น abfss:// path ในโค้ด ไม่ใช้ default_lakehouse attach)
+  # --- Lab: nb_<ชื่อ>_lab เขียนเข้า lh_endpoint_lab ใน endpoint workspace (คนละ workspace
+  # จาก Notebook เอง จึงใช้ $items / $workspace.$id ไม่ได้ ต้อง hardcode) ---
+  # rule กว้าง (ไม่ระบุ item_name) ครอบคลุม Notebook ของทุกคนอัตโนมัติ
+  # workspace: spl-cicd-endpoint-dev -> spl-cicd-endpoint-prd
   - find_value: "30e32f68-1cee-419b-be00-c0671b00f7af"
     replace_value:
       _ALL_: "88302912-33a1-4435-bb8a-814b8cbc4808"
     item_type: "Notebook"
-    item_name: "nb_endpoint_test"
 
-  # lakehouse id ของ lh_endpoint_test_a — dev ยืนยันหลัง deploy-dev-endpoint รันครั้งแรก
-  # (2026-09-18), prod ยืนยันหลัง deploy-prod-endpoint รันครั้งแรกตอน merge PR #80 เข้า main
-  # (2026-09-18, ผ่าน onelake_list-items/core_search-catalog) — เปิด rule จริงแล้ว
-  - find_value: "04a575b1-f277-4fa2-84d4-5214992b8ed0"
+  # lakehouse: lh_endpoint_lab (dev) -> lh_endpoint_lab (prod)
+  - find_value: "846f864e-12e1-40e2-9543-b3e0af1cd7af"
     replace_value:
-      _ALL_: "c1ac5acf-2e59-4cdd-921a-a35a9eb9c6e5"
-    item_type: "Notebook"
-    item_name: "nb_endpoint_test"
-
-# --- nb_endpoint_test_b (Test B: lh_endpoint_test_b authored ผ่าน Git Integration อิสระ
-# ของ spl-cicd-endpoint-dev เอง — ดู section 14 Phase 6) ---
-
-  # workspace id ของ endpoint (เหมือนของ nb_endpoint_test แต่ scope แยกต่างหากตาม item_name)
-  - find_value: "30e32f68-1cee-419b-be00-c0671b00f7af"
-    replace_value:
-      _ALL_: "88302912-33a1-4435-bb8a-814b8cbc4808"
-    item_type: "Notebook"
-    item_name: "nb_endpoint_test_b"
-
-  # lakehouse id ของ lh_endpoint_test_b — dev/prod ยืนยันแล้วผ่าน core_search-catalog
-  # หลัง deploy-prod-endpoint-b รันครั้งแรก (2026-09-18)
-  - find_value: "e68b8bb0-0ddb-44db-af00-bfd5b855a1ce"
-    replace_value:
-      _ALL_: "1f670883-97a3-4171-af57-a25e16a3a8b8"
-    item_type: "Notebook"
-    item_name: "nb_endpoint_test_b"
-
-# --- nb_dqgate_check (section 14 Phase 7: live DQ-gate POC) ---
-# ลืม remap ตอนสร้าง POC เพราะตอนนั้นทดสอบอยู่แค่ใน dev เดียว ไม่เคยข้าม environment มาก่อน —
-# พอ deploy-prod publish เข้า spl-cicd-prd จริง (PR #93) notebook ยัง attach lakehouse ตัวเดิม
-# ของ dev อยู่ (workspace_id ถูก remap แล้วโดย rule ทั่วไปด้านบน แต่ lakehouse GUID ยังไม่ถูก
-# remap เพราะเป็นคนละ GUID จาก lh_test_lakehouse) ทำให้ prod workspace + dev lakehouse GUID
-# ผสมกันแล้ว spark.catalog/saveAsTable หา table ไม่เจอ (Metastore error ตอนรันจริงใน prod)
-# เหมือน pattern เดิมของ lh_test_lakehouse ด้านบนเป๊ะ (same-workspace ไม่ใช่ cross-workspace
-# แบบ endpoint) เลยใช้ $items.Lakehouse.<name>.$id ได้เลย ไม่ต้อง hardcode GUID ต่อ environment
-  - find_value: "f41ea854-ad42-4c83-b646-492bfc22e7a8"
-    replace_value:
-      _ALL_: "$items.Lakehouse.lh_dqgate_test.$id"
+      _ALL_: "9ddb1df7-6657-4de9-86b9-6e2ada96f946"
     item_type: "Notebook"
