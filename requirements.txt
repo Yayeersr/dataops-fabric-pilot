@@ -2,5 +2,6 @@ fabric-cicd
 pytest
 great_expectations
 azure-identity
+PyYAML   # ใช้โดย scripts/deploy_endpoints.py อ่าน endpoint-targets.yml
 # หมายเหตุ: ไม่ต้อง pip install "yq" — GitHub Actions ubuntu-latest runner มี yq (mikefarah/yq) ติดตั้งมาให้อยู่แล้ว
 # pip package ชื่อ yq เป็นคนละตัวกัน (syntax ต่างกัน) ถ้าติดตั้งซ้อนอาจชนกับตัวที่ CI ใช้อยู่

@@ -25,16 +25,3 @@ _defaults:
   Lakehouse: schema
   Warehouse: schema
 # --- Override เฉพาะ item ที่ต้องการ pattern ต่างจาก default ของ type, หรือ skip_check ---
-
-df_test_dataflow:
-  skip_check: true
-  skip_reason: >-
-    Dataflow Gen2 test item (2026-09-07) สำหรับทดลอง Copy Data ต่อยอด — ยังไม่มี validator
-    ที่เข้าใจ format ของ Dataflow (mashup.pq / queryMetadata.json ต่างจาก pipeline-content.json
-    ของ DataPipeline หรือ table schema ของ Lakehouse/Warehouse โดยสิ้นเชิง) เขียน validator ที่
-    เหมาะสมแล้วค่อยเอา skip_check ออก
-
-nb_yayee_sales_transform:
-  skip_check: true
-  skip_reason: >-
-    Demo scenario item (2026-09-09)

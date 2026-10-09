@@ -1,0 +1,24 @@
+# กำหนดว่า "endpoint item" ตัวไหน (item ที่ deploy แยกออกไปคนละ workspace จาก
+# pipeline/notebook หลัก — ดู DataOps-CICD-Workflow.md section 14 Phase 6) ต้อง deploy
+# ไป workspace ไหนบ้าง ต่อ environment
+#
+# เพิ่ม endpoint item ใหม่ = เพิ่ม entry ที่นี่เท่านั้น ไม่ต้องแก้
+# .github/workflows/fabric-ci.yml เลย — scripts/deploy_endpoints.py เป็นตัวอ่าน config นี้
+# แล้ววน deploy ให้ทุก entry ที่มี target ตรงกับ --environment ที่รันอยู่
+#
+# field ต่อ entry:
+#   item_path : path ของ item folder รวม suffix .<FabricType> (เช่น .Lakehouse) —
+#               relative ต่อ repo_dir ด้านล่าง (ส่งตรงเข้า deploy.py --items-path)
+#   repo_dir  : โฟลเดอร์ repository ที่ item นี้ authored อยู่ (relative ต่อ repo root)
+#               ปกติคือ fabric_items ยกเว้น item ที่มี Git Integration แยกเป็นของตัวเอง
+#               (เช่น Test B — authored ตรงใน endpoint workspace เอง)
+#   targets   : dict ของ environment -> Fabric workspace ID ปลายทาง
+#               ใส่แค่ environment ที่ item นี้ต้อง deploy จริง ไม่ต้องใส่ครบทุกตัว
+#               (เช่น item ที่ยังไม่มี prod target ก็ใส่แค่ dev พอ)
+
+# staging: ยังไม่มี endpoint workspace ฝั่ง staging (ดู docs/staging-gate.md ส่วน "Endpoint workspace ของ staging")
+# เปิดใช้โดยเอาคอมเมนต์ `# staging:` ในแต่ละ entry ออกแล้วใส่ GUID — job deploy-endpoints-staging ใน
+# .github/workflows/fabric-ci.yml อ่าน key นี้เอง ไม่ต้องแก้ workflow ถ้ายังไม่มี target staging สคริปต์จะ no-op
+#
+
+# (ยังไม่มี endpoint item — เพิ่ม entry ที่นี่เมื่อมี endpoint item ใหม่)

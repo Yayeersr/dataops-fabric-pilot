@@ -16,6 +16,7 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 | `tests/unit/test_<name>.py` | test คู่กับ Notebook แต่ละตัว (ชื่อต้องตรงชื่อ item เป๊ะ) |
 | `great_expectations/checkpoints/dq_<name>.yml` | checkpoint คู่กับ item ที่ check = `data_quality` |
 | `scripts/validate_pipeline_structure.py`, `validate_schema_contract.py` | script กลางสำหรับ check = `structure` / `schema` |
+| `schema_contracts/<name>.yml` | contract คู่กับ item ที่ check = `schema` (Lakehouse/Warehouse) — ประกาศ table/column/type ที่คาดหวังไว้ ชื่อไฟล์ต้องตรงชื่อ item เป๊ะ เหมือน `tests/unit/test_<name>.py`; เช็คได้แค่ "มี contract ประกาศไว้ไหม + format ถูกไหม" เท่านั้น ไม่ได้เทียบกับ schema จริงบน Fabric (Git Integration ไม่ sync ข้อมูลนี้มาให้) — ดูวิธีใช้เต็มที่ [`docs/check-patterns-guide.md`](docs/check-patterns-guide.md) (ส่วนที่ 2) ตัวอย่างจริงที่ `schema_contracts/lh_dqgate_test.yml` |
 
 ### CD (deploy จริง) — ขาดไม่ได้
 
@@ -32,12 +33,15 @@ Pilot repo ที่พิสูจน์ mechanism ของ CI/CD สำหร
 | `scripts/generate_ci_config.py` | bulk-generate `ci-config.yml` จาก item ที่มีจริง | ตอน onboard item จำนวนมากครั้งแรก |
 | `scripts/generate_parameter.py` | bulk-generate `parameter.yml` จาก metadata ที่ Fabric ฝังไว้ใน notebook | หลังเพิ่ม Notebook ที่ attach lakehouse ใหม่ |
 | `scripts/debug_parameterization.py` | validate `parameter.yml` แบบ offline ไม่ต้องมี Azure credential | ก่อน push เช็ค syntax เร็ว ๆ |
+| `scripts/generate_parameter_all_types.py` | หา GUID ที่ต้อง remap ทุก item type โดยเทียบกับ item จริงใน Dev ผ่าน Fabric REST API (แยก logicalId ที่ `fabric-cicd` จัดการให้เองออกจาก GUID ที่ต้องดูเอง) ต้องมี credential อ่าน Dev ได้ | หลังเพิ่ม item ใหม่ที่อาจฝัง GUID ของ Dev — รัน `--dry-run` ก่อนเสมอ |
+| `scripts/verify_deployed_guids.py` | ตรวจหลัง deploy ว่าไม่มี GUID ของ Dev ตกค้างใน item ของ target (อ่านอย่างเดียว) — PASS แปลว่าไม่ชี้กลับ Dev ไม่ได้พิสูจน์ว่าชี้ถูกที่ GUID ที่ขึ้น INFO ต้องมีคนตรวจ ใช้เวลา ~2.5 นาที | หลัง deploy ไป prod ทุกครั้ง |
+| `scripts/run_live_dq_gate.py` | สั่งรัน pipeline ที่มี live GX check ข้างในผ่าน Fabric REST API + รอผล | ทำ data quality gate ที่เช็คข้อมูลจริงบน Fabric (ไม่ใช่ CSV fixture) — ดูวิธีใช้เต็มที่ [`docs/check-patterns-guide.md`](docs/check-patterns-guide.md) (ส่วนที่ 1) |
 
 ### ยังไม่ได้ใช้จริง (draft)
 
 | ไฟล์ | สถานะ |
 |---|---|
-| `deploy-test-job.yml` | รอสร้าง staging workspace ก่อนถึงจะเอาไปรวมเข้า `fabric-ci.yml` ได้ |
+| `deploy-test-job.yml` | draft เก่า — ถูกแทนที่ด้วย job `deploy-staging` / `dq-gate-staging` ที่เตรียมไว้ใน `fabric-ci.yml` แล้ว (ยังไม่ทำงานจนกว่าจะตั้ง `STAGING_WORKSPACE_ID`) ดู [`docs/staging-gate.md`](docs/staging-gate.md) |
 
 ---
 

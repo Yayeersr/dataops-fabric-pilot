@@ -5,6 +5,7 @@ on:
     branches: [ 'dev', 'main', 'feature/**' ]
   pull_request:
     branches: [ 'staging', 'main' ]
+  workflow_dispatch:   # ใช้กับ job dq-gate-poc ด้านล่าง — manual trigger เท่านั้นตอนนี้
 
 jobs:
   test:
@@ -25,6 +26,10 @@ jobs:
       # หา item folder แบบ recursive ผ่านไฟล์ .platform (marker ของ Fabric item จริง) แทนการ glob
       # fabric_items/*/ ระดับเดียว — เพราะ Fabric workspace folder (เช่น /yayee, /fern) ทำให้ item
       # อยู่ลึกกว่า 1 ชั้นได้ (fabric_items/<folder>/<item>.<Type>/) glob ระดับเดียวจะมองไม่เห็น item เลย
+      #
+      # scan ทั้ง fabric_items/ (Git Integration ของ spl-cicd-dev) และ fabric_items_endpoint/
+      # (Git Integration แยกต่างหากของ spl-cicd-endpoint-dev — section 14 Phase 6 Test B)
+      # 2>/dev/null เผื่อโฟลเดอร์ใดโฟลเดอร์หนึ่งยังไม่มีอยู่
       - name: Run checks based on declared pattern
         run: |
           missing=0
@@ -70,7 +75,9 @@ jobs:
                   echo "::error::[$name] check=data_quality but no checkpoint found (expected great_expectations/checkpoints/dq_${name}.yml)"
                   missing=1
                 else
-                  great_expectations checkpoint run "dq_${name}"
+                  # ไม่ใช่ `great_expectations checkpoint run` — GX 1.x ตัด CLI ออกหมดแล้ว
+                  # (ดู docstring ของ scripts/run_data_quality_checkpoint.py)
+                  python scripts/run_data_quality_checkpoint.py "dq_${name}"
                 fi
                 ;;
 
@@ -101,7 +108,7 @@ jobs:
                 missing=1
                 ;;
             esac
-          done < <(find fabric_items -name ".platform" | sort)
+          done < <(find fabric_items fabric_items_endpoint -name ".platform" 2>/dev/null | sort)
           if [ "$missing" -eq 1 ]; then
             echo "::error::Some items failed required checks — see log above"
             exit 1
@@ -174,7 +181,7 @@ jobs:
             fi
 
             rows="${rows}| \`$name\` | $fabric_type | \`$check\` | $status |"$'\n'
-          done < <(find fabric_items -name ".platform" | sort)
+          done < <(find fabric_items fabric_items_endpoint -name ".platform" 2>/dev/null | sort)
 
           {
             echo "## 🔍 Fabric Item Check Summary"
@@ -233,9 +240,198 @@ jobs:
               });
             }
 
-  deploy-prod:
+  # Gate 1 (pre-deploy, blocking): ตรวจข้อมูลจริงที่ spl-cicd-dev ก่อนอนุญาต merge PR
+  # ที่ promote ออกจาก dev (dev → staging, dev → main) — ต่างจาก dq-gate-poc ด้านล่างซึ่งรัน
+  # "หลัง" deploy-prod เสร็จแล้ว (= post-deploy smoke test, ของเสียขึ้น prod ไปแล้วก่อนรู้ผล)
+  # ดู DataOps-CICD-Workflow.md section 14 Phase 7 ("ทางที่ทำให้เป็น pre-deploy gate ได้เลย
+  # โดยไม่ต้องรอ staging") สำหรับเหตุผลเต็มว่าทำไมเช็คที่ dev ถึงนับเป็น pre-deploy gate จริง
+  #
+  # ใช้ spl-cicd-dev ได้เลยโดยไม่ต้องรอ staging workspace เพราะ dev เป็น environment ต้นทาง —
+  # Fabric Git Integration sync spl-cicd-dev ↔ branch dev โดยตรง ไม่มีขั้น deploy-dev ให้ต้องรอ
+  # โค้ดที่อยู่ใน PR นี้ "รันอยู่บน dev แล้ว" ตั้งแต่ก่อนเปิด PR
+  #
+  # ยิงบน pull_request (ไม่ใช่ push) เพื่อให้เป็น blocking gate ผ่าน required status check —
+  # ต้องไปเปิด Settings → Branches → require status check "dq-gate-dev" บนทั้ง staging และ main
+  # เองด้วย ไม่งั้น job นี้แดงแต่ merge ได้อยู่ ไม่ได้เป็น gate จริง (ยังไม่ได้เปิดในรีโปนี้)
+  #
+  # needs: test ก่อน — ไม่ต้องเสียเวลาจุด Spark session เป็นนาทีถ้า 5 check pattern ยังไม่ผ่าน
+  #
+  # ⚠️ ข้อจำกัด: ผ่านที่ dev ไม่การันตีว่า prod สะอาด (คนละ Lakehouse ID คนละข้อมูล) —
+  # ห้ามเอา dq-gate-poc ที่ prod ออกเพราะ job นี้ไม่ได้มาแทน แค่เพิ่มชั้น gate ก่อนหน้า
+  # ⚠️ ถ้า base_ref == 'main' หมายถึง PR staging → main ด้วย — ตอนนี้ยังชี้ไปที่ dev
+  # เป็นการชั่วคราวเพราะยังไม่มี staging workspace จริง พอสร้างแล้วต้องแยกเป็น job ใหม่ที่ชี้
+  # staging workspace ID แทน ไม่งั้นจะได้ gate ที่ข้าม staging ไปเลยทั้งที่มี staging แล้ว
+  dq-gate-dev:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # ลำดับ pipeline: test → dq-gate-dev → deploy-staging → dq-gate-staging → deploy-prod → dq-gate-poc
+    # (ทุก gate อยู่ "ก่อน" deploy ไป workspace ถัดไป) — job นี้ gate ก่อน deploy-staging
+    # รันเฉพาะบน pull_request จึง 'skipped' บน push (ปกติ ไม่ใช่ปัญหา) ดู docs/staging-gate.md
+    if: |
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'staging' || github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: dq-gate-dev-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # ปิดการเช็ค live DQ ชั่วคราว: pl_dqgate_test (+ nb_dqgate_check, lh_dqgate_test) ถูกลบออกจาก
+      # repo และ spl-cicd-dev ไปแล้ว (commit e86cc55 "delete items") — gate จึงหา pipeline ไม่เจอแล้ว fail
+      # คง job นี้ไว้ (ไม่ลบ) เพราะ "dq-gate-dev" เป็น required check ของ main และ job อื่น needs มันอยู่ —
+      # ลบทั้ง job = PR ค้างรอ check ที่ไม่มีวันรายงานผล
+      # จะเปิดกลับ: สร้าง pl_dqgate_test ใน spl-cicd-dev ใหม่ แล้วคืน step "Run live DQ gate" เดิม
+      # (python scripts/run_live_dq_gate.py --workspace 7a829f6b-4fd1-45c7-8c8e-b7c317816e4b
+      #  --item-type pipeline --item-name pl_dqgate_test พร้อม env FABRIC_* จาก secrets)
+      - name: Live DQ gate disabled (pl_dqgate_test removed)
+        run: echo "::notice::dq-gate-dev ปิดอยู่ — pl_dqgate_test ถูกลบออกจาก spl-cicd-dev (ดู comment ใน job นี้เพื่อเปิดกลับ)"
+
+  # ===== Staging gate (เตรียมไว้ — ยังไม่ทำงานจนกว่าจะมี staging workspace) =====
+  # เป้าหมาย: ตรวจ data quality ที่ staging "ก่อน" อนุญาตให้ merge เข้า main (= ก่อน deploy-prod)
+  # แทนการตรวจหลัง deploy-prod ที่ของเสียขึ้น production ไปแล้ว
+  #
+  # เปิดใช้งาน: ตั้ง repo variable STAGING_WORKSPACE_ID (Settings → Secrets and variables → Actions
+  # → Variables) เป็น GUID ของ staging workspace — ถ้ายังไม่ตั้ง ทั้ง 3 job นี้ถูกข้ามหมด (deploy-prod
+  # จึงรอแค่ dq-gate-dev/test เหมือนเดิม) ขั้นตอนเต็มและข้อควรระวังอยู่ใน docs/staging-gate.md
+  #
+  # รัน 2 ครั้งต่อ 1 release โดยตั้งใจ: (1) บน pull_request → main/staging (gate ก่อน merge)
+  # (2) บน push เข้า main (gate ก่อน deploy-prod ใน run เดียวกัน — ตัวนี้คือตัวกันของเสียขึ้น prod ที่แท้จริง
+  # แม้จะไม่ได้ตั้ง required check ก็ตาม เพราะ deploy-prod needs ผลของ gate นี้)
+  #
+  # `always()` + เช็ค result ของ dq-gate-dev เอง เพราะ dq-gate-dev เป็น 'skipped' เสมอบน push และ
+  # default ของ GitHub คือ skip job ถัดไปตามถ้า needs ถูก skip
+  #
+  # ⚠️ ยังไม่เคยรันจริง (ไม่มี staging workspace ให้ทดสอบ) — ทดสอบรอบแรกกับ PR ทดลองก่อนบังคับเป็น
+  # required check
+  deploy-staging:
+    needs: [test, dq-gate-dev]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
+      vars.STAGING_WORKSPACE_ID != '' &&
+      ((github.event_name == 'pull_request' &&
+        (github.base_ref == 'staging' || github.base_ref == 'main')) ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # staging workspace มีใบเดียวร่วมกันทุก PR — เข้าคิวทีละงาน ไม่ยกเลิกงานที่กำลัง deploy อยู่
+    # (ยกเลิกกลางคันอาจทิ้ง item ครึ่งๆ กลางๆ ใน staging)
+    concurrency:
+      group: staging-workspace
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Deploy to Fabric (staging)
+        # --environment ต้องตรงกับ key ใน parameter.yml (rule ปัจจุบันใช้ _ALL_ ทั้งหมด จึงไม่ติดเรื่องชื่อ
+        # แต่ถ้าเพิ่ม rule แยกตาม environment ต้องใช้ key "staging" เป๊ะ ไม่งั้นถูกข้ามเงียบๆ)
+        run: python scripts/deploy.py --workspace ${{ vars.STAGING_WORKSPACE_ID }} --environment staging
+        env:
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
+  # ตรวจว่า item ที่เพิ่ง deploy เข้า staging ไม่มี GUID ของ Dev ตกค้าง (scripts/verify_deployed_guids.py)
+  # continue-on-error: true = รายงานอย่างเดียว ยังไม่บล็อก เพราะยังไม่เคยรันกับ SP ใน CI (Service Principal
+  # ต้องอ่านได้ทั้ง Dev และ staging) ถ้ารันผ่านเสถียรแล้วให้ลบบรรทัดนี้เพื่อให้เป็น gate จริง
+  # ผล PASS แปลว่าแค่ไม่ชี้กลับ Dev ไม่ได้พิสูจน์ว่าชี้ถูกที่ — ดู INFO ใน log ด้วย
+  verify-staging-guids:
+    needs: deploy-staging
+    if: needs.deploy-staging.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Verify no Dev GUIDs leaked into staging
+        run: python scripts/verify_deployed_guids.py --source 7a829f6b-4fd1-45c7-8c8e-b7c317816e4b --target ${{ vars.STAGING_WORKSPACE_ID }}
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
+  # Gate ตัวจริง (pre-deploy, blocking): รัน live DQ check กับข้อมูลใน staging ที่เพิ่ง deploy
+  # ตั้งเป็น required status check บน main ("dq-gate-staging") ไม่งั้นแดงแล้วก็ยัง merge ได้
+  # ⚠️ ข้อจำกัด: ตรวจได้เท่ากับข้อมูลที่อยู่ใน staging — ถ้าข้อมูลใน staging ไม่เหมือน prod
+  # ผ่านที่นี่ก็ยังไม่การันตี prod ทั้งหมด จึงยังเก็บ dq-gate-poc (หลัง deploy-prod) ไว้เป็นชั้นยืนยัน
+  dq-gate-staging:
+    needs: deploy-staging
+    if: needs.deploy-staging.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      # บน push ไม่มีเลข PR — ใช้ sha แทน ไม่งั้นทุก push จะแชร์ group เดียวกันแล้ว cancel กันเอง
+      group: dq-gate-staging-${{ github.event.pull_request.number || github.sha }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Run live DQ gate against pl_dqgate_test (staging)
+        run: python scripts/run_live_dq_gate.py --workspace ${{ vars.STAGING_WORKSPACE_ID }} --item-type pipeline --item-name pl_dqgate_test
+        env:
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
+  # Endpoint workspace ของ staging (เตรียมไว้ — ยังไม่เปิดใช้) — deploy endpoint item (เช่น lh_endpoint_test_a/b/c)
+  # เข้า workspace endpoint ของ staging ก่อน deploy-prod ตามหลักการเดียวกับ staging ฝั่งหลัก
+  #
+  # ไม่ต้องแก้ไฟล์นี้อีกเมื่อมี workspace จริง: อ่านเป้าหมายจาก `targets.staging` ใน endpoint-targets.yml
+  # (ตอนนี้เป็นคอมเมนต์ ยังไม่มีค่า) — ถ้าไม่มี entry ไหนมี target staging สคริปต์ deploy_endpoints.py จะพิมพ์ notice
+  # แล้วจบแบบไม่ผิดพลาด (no-op) ส่วนตัว job นี้ถูกข้ามเองเมื่อ deploy-staging ถูกข้าม (ยังไม่ตั้ง STAGING_WORKSPACE_ID)
+  # ขั้นตอนเปิดใช้เต็มอยู่ใน docs/staging-gate.md ส่วน "Endpoint workspace ของ staging"
+  deploy-endpoints-staging:
+    needs: deploy-staging
+    if: needs.deploy-staging.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # endpoint workspace ของ staging มีใบเดียวร่วมกันทุก run — เข้าคิว ไม่ยกเลิกงานที่กำลัง deploy อยู่
+    concurrency:
+      group: staging-endpoint-workspace
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Deploy endpoint items (staging, from endpoint-targets.yml)
+        run: python scripts/deploy_endpoints.py --environment staging
+        env:
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
+  # needs: dq-gate-dev ยังเป็นแค่ "จัดกราฟ" (cosmetic) เพราะ dq-gate-dev รันเฉพาะ pull_request และ
+  # deploy-prod รันเฉพาะ push เข้า main — จึง 'skipped' เสมอบน push (gate จริงของ dq-gate-dev
+  # คือ required check ตอน merge PR)
+  #
+  # แต่ deploy-staging / dq-gate-staging เป็น "gate จริง" ใน run เดียวกัน: ถ้าตั้ง STAGING_WORKSPACE_ID
+  # แล้ว deploy-prod จะไม่รันถ้า deploy-staging หรือ dq-gate-staging ล้มเหลว (result == 'failure'/
+  # 'cancelled') — ถ้ายังไม่ตั้ง ทั้งสองเป็น 'skipped' และ deploy-prod ทำงานเหมือนเดิม
+  #
+  # ใช้ `always()` + เช็ค result ที่ยอมรับได้ ('success' หรือ 'skipped') เองทุกตัว เพราะ default ของ
+  # GitHub คือ skip job ถัดไปตามถ้า job ใน needs ถูก skip (pattern เดียวกับ dq-gate-poc ด้านล่าง)
+  deploy-prod:
+    needs: [test, dq-gate-dev, deploy-staging, dq-gate-staging, deploy-endpoints-staging]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
+      (needs.dq-gate-staging.result == 'success' || needs.dq-gate-staging.result == 'skipped') &&
+      (needs.deploy-endpoints-staging.result == 'success' || needs.deploy-endpoints-staging.result == 'skipped') &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production   # ต้องไปสร้าง environment ชื่อ "production" ใน Settings → Environments
                                # แล้วเพิ่ม Required reviewers ก่อน ไม่งั้น deploy จะรันทันทีไม่มีใครเช็คก่อน
@@ -247,6 +443,88 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Deploy to Fabric (production)
         run: python scripts/deploy.py --workspace 84cc9682-9946-44a6-83b4-9275ebfb9834 --environment prod
+        env:
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
+  # section 14 Phase 6: cross-workspace pipeline → endpoint deploy — job เดียวจัดการ
+  # endpoint item ทุกตัว (ไม่ว่าจะเป็น Test A แบบ shared authoring หรือ Test B แบบ
+  # independent git channel) โดยอ่าน endpoint-targets.yml ผ่าน scripts/deploy_endpoints.py
+  # เพิ่ม endpoint item ใหม่ในอนาคต = เพิ่ม entry ใน endpoint-targets.yml เท่านั้น
+  # ไม่ต้องมาเพิ่ม job ใหม่ในไฟล์นี้อีก (เดิมมี 3 job แยกกันต่อ item ซึ่งไม่ scale)
+  #
+  # จงใจไม่ใส่ needs: deploy-prod เพื่อให้รันพร้อมกัน (parallel) กับ deploy-prod จริง
+  # ไม่ใช่รอต่อคิว — ส่วน item หลายตัวภายใน job นี้เอง (ถ้ามีหลาย endpoint พร้อมกัน)
+  # จะ deploy เรียงกันไปทีละตัว (sequential) ไม่ใช่ parallel กันเอง แลกกับความง่ายในการ
+  # ดูแล ถ้าอนาคตมี endpoint จำนวนมากจนรอไม่ไหว ค่อยพิจารณาทำเป็น matrix job แทน
+  #
+  # needs ชุดเดียวกับ deploy-prod เพื่อไม่ให้ endpoint ของ prod ถูก deploy ก่อนที่ gate จะผ่าน (บน dev push
+  # gate พวกนี้เป็น 'skipped' เสมอ จึงไม่กระทบ deploy ไป dev) — ยังไม่ต้องรอ deploy-prod เอง
+  deploy-endpoints:
+    needs: [test, dq-gate-dev, deploy-staging, dq-gate-staging, deploy-endpoints-staging]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.dq-gate-dev.result == 'success' || needs.dq-gate-dev.result == 'skipped') &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
+      (needs.dq-gate-staging.result == 'success' || needs.dq-gate-staging.result == 'skipped') &&
+      (needs.deploy-endpoints-staging.result == 'success' || needs.deploy-endpoints-staging.result == 'skipped') &&
+      (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Deploy endpoint items (from endpoint-targets.yml)
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            ENVIRONMENT=prod
+          else
+            ENVIRONMENT=dev
+          fi
+          python scripts/deploy_endpoints.py --environment "$ENVIRONMENT"
+        env:
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+
+  # Live DQ-gate POC — พิสูจน์ว่า GX check ที่รันจริงบน Fabric (Spark) ผ่าน nb_dqgate_check
+  # (เรียกจาก pl_dqgate_test) ทำให้ pipeline job instance fail จริงถ้าข้อมูลเสีย ต่างจาก
+  # check pattern data_quality เดิมที่เช็คแค่ CSV fixture ในเครื่อง CI runner เอง ไม่แตะ Fabric
+  # เลย (ดู great_expectations/checkpoints/dq_TEMPLATE.yml กับ DataOps-CICD-Workflow.md
+  # section 14) — nb_dqgate_check/pl_dqgate_test/lh_dqgate_test ถูก skip_check ไว้ใน
+  # ci-config.yml เพราะเช็คผ่าน job นี้แทน ไม่ใช่ static definition check
+  #
+  # Auto-trigger เฉพาะตอน push เข้า main เท่านั้น (ไม่ใช่ staging — staging ยังไม่มี Fabric
+  # workspace จริงให้ deploy/เช็ค ดู README ข้อ 6 — เปิด auto-trigger ที่นั่นตอนนี้จะ fail ทันที
+  # เพราะหา item ไม่เจอ) เช็คที่ workspace spl-cicd-prd (production) ไม่ใช่ dev เพราะจุดประสงค์คือ
+  # verify ของที่เพิ่ง deploy ขึ้น production จริง ไม่ใช่แค่เช็คว่า dev ยัง healthy — ต้องรอ
+  # deploy-prod publish item พวกนี้เข้า prod ให้เสร็จก่อนเสมอ (needs: deploy-prod) ใช้
+  # `needs.deploy-prod.result == 'success'` แทนแค่ needs เฉยๆ เพราะ deploy-prod เองมี `if`
+  # ที่ skip ได้ (เช่นตอน trigger แบบ workflow_dispatch) — ถ้าไม่เช็ค result explicit แบบนี้
+  # job นี้จะถูก skip ไปด้วยตอน deploy-prod skip ทำให้ manual trigger ใช้ไม่ได้
+  #
+  # ยังเปิด workflow_dispatch ไว้เป็น fallback เผื่ออยากสั่งเช็คมือ (จะข้าม deploy-prod
+  # ไปเลย เช็คของที่ deploy อยู่ใน prod ตอนนั้น ไม่ได้ deploy ใหม่ให้)
+  dq-gate-poc:
+    needs: deploy-prod
+    if: |
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy-prod.result == 'success'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Run live DQ gate against pl_dqgate_test (spl-cicd-prd)
+        run: python scripts/run_live_dq_gate.py --workspace 84cc9682-9946-44a6-83b4-9275ebfb9834 --item-type pipeline --item-name pl_dqgate_test
         env:
           FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
           FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
